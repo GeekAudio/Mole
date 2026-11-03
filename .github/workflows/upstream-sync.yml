@@ -1,0 +1,77 @@
+name: 同步上游并发布中文版
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: upstream-sync-main
+  cancel-in-progress: false
+
+jobs:
+  sync-and-release:
+    if: github.repository == 'GeekAudio/Mole'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 检出中文分支
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 合并上游主分支
+        id: sync
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/tw93/Mole.git
+          git fetch upstream main --no-tags
+          before=$(git rev-parse HEAD)
+          if ! git merge --no-edit --no-ff upstream/main; then
+            git merge --abort || true
+            echo "::error::上游更新与中文分支存在冲突，已停止同步和发布。请先解决冲突。"
+            exit 1
+          fi
+          after=$(git rev-parse HEAD)
+          if [[ "$before" == "$after" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "上游没有新提交，无需同步。" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "已将上游更新合并到中文主分支：\`$after\`。" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 为同步结果创建中文版本标签
+        if: steps.sync.outputs.changed == 'true'
+        id: tag
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^VERSION="\([^"]*\)"$/\1/p' mole | head -1)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::无法从 mole 文件读取有效版本号。"
+            exit 1
+          }
+          previous=$(git ls-remote --tags origin "refs/tags/V${version}-zh.*" |
+            awk '$2 !~ /\^\{\}$/ { sub(".*-zh\\.", "", $2); print $2 }' |
+            sort -n | tail -1)
+          number=$(( ${previous:-0} + 1 ))
+          tag="V${version}-zh.${number}"
+          git tag -a "$tag" -m "Mole 中文版 $tag"
+          git push origin "refs/tags/$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "已创建版本标签：\`$tag\`。" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 启动 Release 构建
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main -f "release_tag=$RELEASE_TAG"
