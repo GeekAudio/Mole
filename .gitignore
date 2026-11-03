@@ -75,10 +75,6 @@ bin/analyze-go
 bin/status-go
 bin/analyze-darwin-*
 bin/status-darwin-*
-/MoleApp/.build/
-/MoleApp/.build-*/
-/MoleApp/.app-binaries/
-/MoleApp/dist/
 
 # Local research clones and scratch output (oss-linux study clones, sync reviews)
 /.artifacts/
