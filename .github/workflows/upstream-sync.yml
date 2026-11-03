@@ -35,9 +35,17 @@ jobs:
           git fetch upstream main --no-tags
           before=$(git rev-parse HEAD)
           if ! git merge --no-edit --no-ff upstream/main; then
-            git merge --abort || true
-            echo "::error::上游更新与中文分支存在冲突，已停止同步和发布。请先解决冲突。"
-            exit 1
+            conflicts=$(git diff --name-only --diff-filter=U)
+            if [[ "$conflicts" == "README.md" ]]; then
+              git checkout --ours -- README.md
+              git add README.md
+              git commit --no-edit
+              echo "::notice::上游 README 与中文 README 冲突，已保留本仓库的中文版本。"
+            else
+              git merge --abort || true
+              echo "::error::上游更新与中文分支在 README.md 以外存在冲突，已停止同步和发布。请先解决冲突。"
+              exit 1
+            fi
           fi
           after=$(git rev-parse HEAD)
           if [[ "$before" == "$after" ]]; then
