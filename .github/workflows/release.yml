@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'V*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag already pushed to this repository
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -25,14 +31,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Verify release tag matches source version
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           SOURCE_VERSION=$(sed -n 's/^VERSION="\([^"]*\)"$/\1/p' mole)
           EXPECTED_TAG="V${SOURCE_VERSION}"
-          if [[ -z "$SOURCE_VERSION" || "$RELEASE_TAG" != "$EXPECTED_TAG" ]]; then
+          if [[ -z "$SOURCE_VERSION" || ( "$RELEASE_TAG" != "$EXPECTED_TAG" && ! "$RELEASE_TAG" =~ ^${EXPECTED_TAG}-zh\.[0-9]+$ ) ]]; then
             echo "Release tag ${RELEASE_TAG} does not match source ${EXPECTED_TAG}" >&2
             exit 1
           fi
@@ -88,10 +96,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.release_tag || github.ref }}
           sparse-checkout: scripts/release_workflow_gate.py
           sparse-checkout-cone-mode: false
 
       - name: Verify required workflows passed for this commit
+        if: github.repository == 'tw93/Mole'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ github.sha }}
@@ -130,15 +140,17 @@ jobs:
 
       - name: Create Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         with:
-          name: ${{ github.ref_name }}
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          name: ${{ inputs.release_tag && format('Mole 中文版 {0}', inputs.release_tag) || github.ref_name }}
+          body: ${{ inputs.release_tag && '本版本自动合并了上游 tw93/Mole 的更新，并包含简体中文界面。' || '' }}
           files: bin/*
           generate_release_notes: false
           draft: false
           # A tag carrying a pre-release segment stays a prerelease, so it can
           # never become releases/latest and reach install.sh or `mo update`.
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(inputs.release_tag || github.ref_name, '-') && !contains(inputs.release_tag || github.ref_name, '-zh.') }}
 
   update-homebrew-core:
     name: Update Homebrew Core
@@ -147,7 +159,7 @@ jobs:
     needs: release
     # A prerelease must never move the stable Homebrew formula; only the
     # release job runs for a tag carrying a pre-release segment.
-    if: ${{ !contains(github.ref_name, '-') }}
+    if: ${{ github.repository == 'tw93/Mole' && !contains(inputs.release_tag || github.ref_name, '-') }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
