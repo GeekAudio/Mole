@@ -21,12 +21,6 @@ curl -fsSL https://raw.githubusercontent.com/GeekAudio/Mole/main/install.sh | ba
 
 确保 `~/.local/bin` 已加入 `PATH`。安装完成后运行 `mo` 打开菜单。
 
-## macOS 图形界面
-
-先安装上方的中文命令行版，再从 [GitHub Releases](https://github.com/GeekAudio/Mole/releases/latest/download/Mole-zh-macOS-universal.zip) 下载并解压 `Mole 中文版.app`，拖入“应用程序”即可。图形界面提供系统状态、文件夹分析和清理预览；实际清理与优化会在终端中继续，并保留 Mole 原有的逐项确认流程。
-
-此 App 使用临时签名，尚未进行 Apple Developer ID 公证。若 macOS 首次拦截，请在“系统设置 → 隐私与安全性”中允许打开。
-
 ## 常用命令
 
 ```bash

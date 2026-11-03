@@ -288,14 +288,15 @@ func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int
 }
 
 func translateStatusDisplay(text string) string {
-	if strings.HasSuffix(text, " high CPU") {
-		return strings.TrimSuffix(text, " high CPU") + " CPU 占用过高"
+	if prefix, ok := strings.CutSuffix(text, " high CPU"); ok {
+		return prefix + " CPU 占用过高"
 	}
-	if strings.HasSuffix(text, " memory pressure") {
-		return strings.TrimSuffix(text, " memory pressure") + " 内存压力过高"
+	if prefix, ok := strings.CutSuffix(text, " memory pressure"); ok {
+		return prefix + " 内存压力过高"
 	}
 	if strings.HasPrefix(text, "Disk low, ") {
-		free := strings.TrimSuffix(strings.TrimPrefix(text, "Disk low, "), " free")
+		remaining, _ := strings.CutPrefix(text, "Disk low, ")
+		free, _ := strings.CutSuffix(remaining, " free")
 		return "磁盘空间不足，剩余 " + free
 	}
 	switch text {

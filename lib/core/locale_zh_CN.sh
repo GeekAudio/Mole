@@ -298,9 +298,15 @@ echo() {
         return
     fi
     local rendered translated
-    rendered="$(builtin echo "$@"; builtin printf '\001')"
+    rendered="$(
+        builtin echo "$@"
+        builtin printf '\001'
+    )"
     rendered="${rendered%$'\001'}"
-    translated="$(mole_zh_translate "$rendered"; builtin printf '\001')"
+    translated="$(
+        mole_zh_translate "$rendered"
+        builtin printf '\001'
+    )"
     translated="${translated%$'\001'}"
     builtin printf '%s' "$translated"
 }
@@ -311,9 +317,15 @@ printf() {
         return
     fi
     local rendered translated rc=0
-    rendered="$(builtin printf "$@" || rc=$?; builtin printf '\001')"
+    rendered="$(
+        builtin printf "$@" || rc=$?
+        builtin printf '\001'
+    )"
     rendered="${rendered%$'\001'}"
-    translated="$(mole_zh_translate "$rendered"; builtin printf '\001')"
+    translated="$(
+        mole_zh_translate "$rendered"
+        builtin printf '\001'
+    )"
     translated="${translated%$'\001'}"
     builtin printf '%s' "$translated"
     return "$rc"
