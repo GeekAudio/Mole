@@ -26,25 +26,22 @@ func (m model) View() string {
 	if m.inOverviewMode() {
 		freeLabel := ""
 		if m.diskFree > 0 {
-			freeLabel = fmt.Sprintf("  %s(%s free)%s", colorGray, humanizeBytes(m.diskFree), colorReset)
+			freeLabel = fmt.Sprintf("  %s（剩余 %s）%s", colorGray, humanizeBytes(m.diskFree), colorReset)
 		}
-		fmt.Fprintf(&b, "%sAnalyze Disk%s%s\n", colorPurpleBold, colorReset, freeLabel)
+		fmt.Fprintf(&b, "%s磁盘分析%s%s\n", colorPurpleBold, colorReset, freeLabel)
 		if m.localSnapshotCount > 0 {
-			snapshotLabel := "snapshot"
-			if m.localSnapshotCount != 1 {
-				snapshotLabel = "snapshots"
-			}
+			snapshotLabel := "个快照"
 			freshnessLabel := ""
 			if !m.localSnapshotFresh {
-				freshnessLabel = " · last successful check"
+				freshnessLabel = " · 上次成功检查"
 			}
-			fmt.Fprintf(&b, "%s%d Time Machine local %s · snapshot-only space is not listed below%s%s\n",
+			fmt.Fprintf(&b, "%s时间机器本地快照：%d %s · 仅快照占用未计入下方%s%s\n",
 				colorGray, m.localSnapshotCount, snapshotLabel, freshnessLabel, colorReset)
 		}
 		if m.overviewScanning {
 			if allOverviewEntriesPending(m.entries) {
-				fmt.Fprintf(&b, "%sSelect a location to explore:%s  ", colorGray, colorReset)
-				fmt.Fprintf(&b, "%s%s%s%s Analyzing disk usage...\n\n",
+				fmt.Fprintf(&b, "%s选择要查看的位置：%s  ", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s%s%s%s 正在分析磁盘占用……\n\n",
 					colorCyan, colorBold, spinnerFrames[m.spinner], colorReset)
 			} else {
 				m.writeOverviewStatus(&b)
@@ -53,13 +50,13 @@ func (m model) View() string {
 			if hasPendingOverviewEntries(m.entries) {
 				m.writeOverviewStatus(&b)
 			} else {
-				fmt.Fprintf(&b, "%sSelect a location to explore:%s\n\n", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s选择要查看的位置：%s\n\n", colorGray, colorReset)
 			}
 		}
 	} else {
-		fmt.Fprintf(&b, "%sAnalyze Disk%s  %s%s%s", colorPurpleBold, colorReset, colorGray, displayPath(m.path), colorReset)
+		fmt.Fprintf(&b, "%s磁盘分析%s  %s%s%s", colorPurpleBold, colorReset, colorGray, displayPath(m.path), colorReset)
 		if !m.scanning || m.totalSize > 0 {
-			fmt.Fprintf(&b, "  |  Total: %s", measuredSizeLabel(m.totalSize, m.scanState))
+			fmt.Fprintf(&b, "  |  总计：%s", measuredSizeLabel(m.totalSize, m.scanState))
 		}
 		fmt.Fprintf(&b, "\n\n")
 	}
@@ -75,13 +72,13 @@ func (m model) View() string {
 		// "0 items removed" there reads as a stalled delete; say what is happening
 		// instead, and show the tally only once it means something.
 		if count > 0 {
-			fmt.Fprintf(&b, "%s%s%s%s Moving to Trash: %s%s items%s moved, please wait...\n",
+			fmt.Fprintf(&b, "%s%s%s%s 正在移至废纸篓：%s%s 个项目%s，正在处理……\n",
 				colorCyan, colorBold,
 				spinnerFrames[m.spinner],
 				colorReset,
 				colorYellow, formatNumber(count), colorReset)
 		} else {
-			fmt.Fprintf(&b, "%s%s%s%s Moving to Trash, please wait...\n",
+			fmt.Fprintf(&b, "%s%s%s%s 正在移至废纸篓，请稍候……\n",
 				colorCyan, colorBold,
 				spinnerFrames[m.spinner],
 				colorReset)
@@ -107,7 +104,7 @@ func (m model) View() string {
 			progressPrefix = fmt.Sprintf(" %s%.0f%%%s", colorCyan, percent, colorReset)
 		}
 
-		statusLine := fmt.Sprintf("%s%s%s%s Scanning%s: %s%s files%s, %s%s dirs%s, %s%s%s",
+		statusLine := fmt.Sprintf("%s%s%s%s 正在扫描%s：%s%s 个文件%s，%s%s 个目录%s，%s%s%s",
 			colorCyan, colorBold,
 			spinnerFrames[m.spinner],
 			colorReset,
@@ -146,7 +143,7 @@ func (m model) View() string {
 			return b.String()
 		}
 		if showingCachedView {
-			fmt.Fprintf(&b, "%sShowing cached results while refreshing...%s\n\n", colorGray, colorReset)
+			fmt.Fprintf(&b, "%s正在刷新，暂时显示缓存结果……%s\n\n", colorGray, colorReset)
 		} else {
 			fmt.Fprintln(&b)
 		}
@@ -158,15 +155,15 @@ func (m model) View() string {
 			if m.largeFiltering {
 				cursor = "▌"
 			}
-			fmt.Fprintf(&b, "  %sFilter:%s %s%s  %s(%d matches)%s\n\n",
+			fmt.Fprintf(&b, "  %s筛选：%s %s%s  %s（%d 项）%s\n\n",
 				colorCyan, colorReset, m.largeFilter, cursor,
 				colorGray, len(m.largeFiles), colorReset)
 		}
 		if len(m.largeFiles) == 0 {
 			if m.largeFilter != "" {
-				fmt.Fprintf(&b, "  No matches for %q\n", m.largeFilter)
+				fmt.Fprintf(&b, "  没有匹配项：%q\n", m.largeFilter)
 			} else {
-				fmt.Fprintln(&b, "  No large files found")
+				fmt.Fprintln(&b, "  未找到大文件")
 			}
 		} else {
 			viewport := calculateViewport(m.height, true)
@@ -211,15 +208,15 @@ func (m model) View() string {
 			if m.entryFiltering {
 				cursor = "▌"
 			}
-			fmt.Fprintf(&b, "  %sFilter:%s %s%s  %s(%d matches)%s\n\n",
+			fmt.Fprintf(&b, "  %s筛选：%s %s%s  %s（%d 项）%s\n\n",
 				colorCyan, colorReset, m.entryFilter, cursor,
 				colorGray, len(m.entries), colorReset)
 		}
 		if len(m.entries) == 0 {
 			if !m.inOverviewMode() && m.entryFilter != "" {
-				fmt.Fprintf(&b, "  No matches for %q\n", m.entryFilter)
+				fmt.Fprintf(&b, "  没有匹配项：%q\n", m.entryFilter)
 			} else {
-				fmt.Fprintln(&b, "  Empty directory")
+				fmt.Fprintln(&b, "  空目录")
 			}
 		} else {
 			if m.inOverviewMode() {
@@ -248,7 +245,7 @@ func (m model) View() string {
 					// animated spinner keeps the row visibly alive, and the
 					// string is exactly 10 display columns, flush with the
 					// right-aligned sizes (a static placeholder read as stuck).
-					sizeText := fmt.Sprintf("%s scanning", spinnerFrames[m.spinner])
+					sizeText := fmt.Sprintf("%s 扫描中", spinnerFrames[m.spinner])
 					sizeColor := colorCyan
 					if sizeVal >= 0 {
 						sizeText = sizeColumn(measuredSizeLabel(sizeVal, entry.State))
@@ -320,7 +317,7 @@ func (m model) View() string {
 					sizeColor := sizeColorForPercent(percent)
 					size := sizeColumn(measuredSizeLabel(entry.Size, entry.State))
 					if entry.Size < 0 {
-						size = fmt.Sprintf("%s %s", spinnerFrames[m.spinner], "scanning")
+						size = fmt.Sprintf("%s 扫描中", spinnerFrames[m.spinner])
 						sizeColor = colorCyan
 					}
 
@@ -374,41 +371,41 @@ func (m model) View() string {
 	fmt.Fprintln(&b)
 	if m.inOverviewMode() {
 		if len(m.history) > 0 {
-			fmt.Fprintf(&b, "%s↑↓←→ | Enter | R Refresh | O Open | P Preview | F File | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, colorReset)
+			fmt.Fprintf(&b, "%s↑↓←→ 移动 | 回车打开 | R 刷新 | O 打开 | P 预览 | F 文件 | Esc 返回 | Q/Ctrl+C 退出%s\n", colorGray, colorReset)
 		} else {
-			fmt.Fprintf(&b, "%s↑↓→ | Enter | R Refresh | O Open | P Preview | F File | Esc/Q Quit%s\n", colorGray, colorReset)
+			fmt.Fprintf(&b, "%s↑↓ 移动 | 回车选择 | R 刷新 | O 打开 | P 预览 | F 文件 | Esc/Q 退出%s\n", colorGray, colorReset)
 		}
 	} else if m.showLargeFiles {
 		if m.largeFiltering {
-			fmt.Fprintf(&b, "%sType to filter  |  Enter Apply  |  Esc Clear  |  Ctrl+C Quit%s\n", colorGray, colorReset)
+			fmt.Fprintf(&b, "%s输入筛选内容 | 回车应用 | Esc 清除 | Ctrl+C 退出%s\n", colorGray, colorReset)
 		} else if m.largeFilter != "" {
-			fmt.Fprintf(&b, "%s↑↓← | Space Select | / Edit | Esc Clear filter | O Open | P Preview | F File | ⌫ Del | Q Quit%s\n", colorGray, colorReset)
+			fmt.Fprintf(&b, "%s↑↓ 移动 | 空格选择 | / 编辑 | Esc 清除筛选 | O 打开 | P 预览 | F 文件 | ⌫ 删除 | Q 退出%s\n", colorGray, colorReset)
 		} else {
 			selectCount := len(m.largeMultiSelected)
 			if selectCount > 0 {
-				fmt.Fprintf(&b, "%s↑↓← | Space Select | / Filter | R Refresh | O Open | P Preview | F File | ⌫ Del %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, colorReset)
+				fmt.Fprintf(&b, "%s↑↓ 移动 | 空格选择 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 %d 项 | Esc 返回 | Q 退出%s\n", colorGray, selectCount, colorReset)
 			} else {
-				fmt.Fprintf(&b, "%s↑↓← | Space Select | / Filter | R Refresh | O Open | P Preview | F File | ⌫ Del | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s↑↓ 移动 | 空格选择 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 | Esc 返回 | Q 退出%s\n", colorGray, colorReset)
 			}
 		}
 	} else if m.entryFiltering {
-		fmt.Fprintf(&b, "%sType to filter  |  Enter Apply  |  Esc Clear  |  Ctrl+C Quit%s\n", colorGray, colorReset)
+		fmt.Fprintf(&b, "%s输入筛选内容 | 回车应用 | Esc 清除 | Ctrl+C 退出%s\n", colorGray, colorReset)
 	} else if m.entryFilter != "" {
-		fmt.Fprintf(&b, "%s↑↓←→ | Enter | Space Select | / Edit | Esc Clear filter | O Open | P Preview | F File | ⌫ Del | Q Quit%s\n", colorGray, colorReset)
+		fmt.Fprintf(&b, "%s↑↓←→ 移动 | 回车打开 | 空格选择 | / 编辑 | Esc 清除筛选 | O 打开 | P 预览 | F 文件 | ⌫ 删除 | Q 退出%s\n", colorGray, colorReset)
 	} else {
 		largeFileCount := len(m.largeFiles)
 		selectCount := len(m.multiSelected)
 		if selectCount > 0 {
 			if largeFileCount > 0 {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | / Filter | R Refresh | O Open | P Preview | F File | ⌫ Del %d | T Top %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, largeFileCount, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ 移动 | 空格选择 | 回车打开 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 %d 项 | T 前 %d 项 | Esc 返回 | Q 退出%s\n", colorGray, selectCount, largeFileCount, colorReset)
 			} else {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | / Filter | R Refresh | O Open | P Preview | F File | ⌫ Del %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ 移动 | 空格选择 | 回车打开 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 %d 项 | Esc 返回 | Q 退出%s\n", colorGray, selectCount, colorReset)
 			}
 		} else {
 			if largeFileCount > 0 {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | / Filter | R Refresh | O Open | P Preview | F File | ⌫ Del | T Top %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, largeFileCount, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ 移动 | 空格选择 | 回车打开 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 | T 前 %d 项 | Esc 返回 | Q 退出%s\n", colorGray, largeFileCount, colorReset)
 			} else {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | / Filter | R Refresh | O Open | P Preview | F File | ⌫ Del | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ 移动 | 空格选择 | 回车打开 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 | Esc 返回 | Q 退出%s\n", colorGray, colorReset)
 			}
 		}
 	}
@@ -440,21 +437,21 @@ func (m model) View() string {
 		}
 
 		if deleteCount > 1 {
-			fmt.Fprintf(&b, "%sMove to Trash:%s %d items, %s  %sPress Enter to confirm  |  ESC cancel%s\n",
+			fmt.Fprintf(&b, "%s移至废纸篓：%s %d 个项目，占用 %s  %s回车确认 | ESC 取消%s\n",
 				colorRed, colorReset,
 				deleteCount, measuredSizeLabel(totalDeleteSize, deleteState),
 				colorGray, colorReset)
 		} else {
-			fmt.Fprintf(&b, "%sMove to Trash:%s %s, %s  %sPress Enter to confirm  |  ESC cancel%s\n",
+			fmt.Fprintf(&b, "%s移至废纸篓：%s %s，占用 %s  %s回车确认 | ESC 取消%s\n",
 				colorRed, colorReset,
 				m.deleteTarget.Name, measuredSizeLabel(m.deleteTarget.Size, m.deleteTarget.State),
 				colorGray, colorReset)
 		}
 		if deleteCount > 1 && hasAppBundle {
-			fmt.Fprintf(&b, "%sOnly the app bundle moves to Trash. Use mo uninstall <App> to also remove support files.%s\n",
+			fmt.Fprintf(&b, "%s这里只会将应用移至废纸篓。使用 mo uninstall <应用> 可同时删除支持文件。%s\n",
 				colorYellow, colorReset)
 		} else if deleteCount <= 1 && isAppBundleEntry(*m.deleteTarget) {
-			fmt.Fprintf(&b, "%sApp bundle: only the bundle moves to Trash. Use %s to also remove its support files.%s\n",
+			fmt.Fprintf(&b, "%s这里只会将应用移至废纸篓。使用 %s 可同时删除支持文件。%s\n",
 				colorYellow, uninstallCommandForApp(m.deleteTarget.Name), colorReset)
 		}
 	}
@@ -462,8 +459,8 @@ func (m model) View() string {
 }
 
 func (m model) writeOverviewStatus(b *strings.Builder) {
-	const prompt = "Select a location to explore:"
-	status := m.status
+	const prompt = "选择要查看的位置："
+	status := translateAnalyzeStatus(m.status)
 	inlineWidth := displayWidth(prompt) + 2 + displayWidth(spinnerFrames[m.spinner]) + 1 + displayWidth(status)
 	if m.width > 0 && inlineWidth > m.width {
 		fmt.Fprintf(b, "%s%s%s\n", colorGray, prompt, colorReset)
@@ -472,6 +469,73 @@ func (m model) writeOverviewStatus(b *strings.Builder) {
 		fmt.Fprintf(b, "%s%s%s  ", colorGray, prompt, colorReset)
 	}
 	fmt.Fprintf(b, "%s%s%s%s %s\n\n", colorCyan, colorBold, spinnerFrames[m.spinner], colorReset, status)
+}
+
+func translateAnalyzeStatus(status string) string {
+	switch {
+	case status == "Preparing scan...":
+		return "正在准备扫描……"
+	case status == "Checking system folders...":
+		return "正在检查系统目录……"
+	case status == "Ready":
+		return "就绪"
+	case strings.HasPrefix(status, "Scanning "):
+		return "正在扫描 " + strings.TrimPrefix(status, "Scanning ")
+	case status == "Scanning...":
+		return "正在扫描……"
+	case strings.HasPrefix(status, "Scan failed: "):
+		return "扫描失败：" + strings.TrimPrefix(status, "Scan failed: ")
+	case strings.HasPrefix(status, "Loaded cached data for "):
+		path := strings.TrimPrefix(status, "Loaded cached data for ")
+		path = strings.TrimSuffix(path, ", refreshing...")
+		return "已载入缓存，正在刷新 " + path
+	case strings.HasPrefix(status, "Cached view for "):
+		return "缓存视图：" + strings.TrimPrefix(status, "Cached view for ")
+	case status == "Refreshing...":
+		return "正在刷新……"
+	case strings.HasPrefix(status, "Moving to Trash"):
+		return strings.Replace(status, "Moving to Trash", "正在移至废纸篓", 1)
+	case strings.HasPrefix(status, "Moved "):
+		return strings.Replace(strings.Replace(status, "Moved ", "已移至废纸篓 ", 1), " items to Trash", " 个项目", 1)
+	case status == "Cancelled":
+		return "已取消"
+	case strings.HasPrefix(status, "Size unavailable"):
+		return strings.Replace(status, "Size unavailable", "大小不可用", 1)
+	case strings.HasPrefix(status, "Partial size"):
+		return strings.Replace(status, "Partial size", "部分大小", 1)
+	case status == "Nothing to move to Trash":
+		return "没有可移至废纸篓的项目"
+	case status == "Top files are available after the scan finishes":
+		return "扫描完成后可查看大文件"
+	case strings.HasPrefix(status, "Live sort: "):
+		return "实时排序：" + strings.TrimPrefix(status, "Live sort: ")
+	case strings.HasPrefix(status, "Too many items to open, max "):
+		return strings.Replace(strings.Replace(status, "Too many items to open, max ", "待打开项目过多，上限 ", 1), ", selected ", "，已选 ", 1)
+	case strings.HasPrefix(status, "Too many items to reveal, max "):
+		return strings.Replace(strings.Replace(status, "Too many items to reveal, max ", "待显示项目过多，上限 ", 1), ", selected ", "，已选 ", 1)
+	case strings.HasPrefix(status, "Opening "):
+		return "正在打开 " + strings.TrimPrefix(status, "Opening ")
+	case strings.HasPrefix(status, "Showing "):
+		return strings.Replace(strings.TrimPrefix(status, "Showing "), " in Finder...", "（访达）……", 1)
+	case strings.HasPrefix(status, "Previewing "):
+		return "正在预览 " + strings.TrimPrefix(status, "Previewing ")
+	case status == "Selection is available after the scan finishes":
+		return "扫描完成后可进行选择"
+	case strings.HasPrefix(status, "Cannot select "):
+		return strings.Replace(strings.TrimPrefix(status, "Cannot select "), ", size unknown", "，大小未知", 1)
+	case status == "Move to Trash is available after the scan finishes":
+		return "扫描完成后可移至废纸篓"
+	case strings.HasPrefix(status, "Cannot move "):
+		return strings.Replace(strings.TrimPrefix(status, "Cannot move "), ", size unknown", "，大小未知", 1)
+	case strings.HasPrefix(status, "Filter "):
+		filter, count, found := strings.Cut(strings.TrimPrefix(status, "Filter "), ", ")
+		if found {
+			return "筛选“" + filter + "”，" + strings.TrimSuffix(count, " matches") + " 项匹配"
+		}
+	case strings.HasPrefix(status, "File: "):
+		return "文件：" + strings.TrimPrefix(status, "File: ")
+	}
+	return status
 }
 
 // isAppBundleEntry reports whether a scanned entry is a macOS application

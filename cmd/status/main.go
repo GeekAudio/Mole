@@ -323,24 +323,23 @@ func parseWatchInterval(raw string) (time.Duration, error) {
 // usageText is the help every other Mole subcommand prints by hand. The Go flag
 // package would otherwise render "Usage of /usr/local/bin/status-go:", naming a
 // bundled binary the user never typed, so the text is written out here instead.
-const usageText = `Usage: mo status [OPTIONS]
+const usageText = `用法：mo status [选项]
 
-Monitor system health. Without options it opens the interactive dashboard, and
-switches to a single JSON snapshot when stdout is not a terminal.
+监控系统状态。不带参数时打开交互式看板；标准输出不是终端时，输出一份 JSON 快照。
 
-Options:
-  --json                          Output one metrics snapshot as JSON
-  --watch                         Stream snapshots as newline-delimited JSON
-  --interval DURATION             With --watch, collection interval (default 1s)
-  --proc-cpu-alerts               Enable high-CPU process alerts (default true)
-  --proc-cpu-threshold PERCENT    Alert above this CPU percent (default 100)
-  --proc-cpu-window DURATION      Time above the threshold before alerting (default 5m)
-  -h, --help                      Show this help message
+选项：
+  --json                          以 JSON 输出一份指标快照
+  --watch                         持续输出换行分隔的 JSON 快照
+  --interval DURATION             --watch 的采集间隔（默认 1s）
+  --proc-cpu-alerts               启用高 CPU 进程告警（默认开启）
+  --proc-cpu-threshold PERCENT    CPU 占用超过此百分比时告警（默认 100）
+  --proc-cpu-window DURATION      超过阈值多长时间后告警（默认 5m）
+  -h, --help                      显示此帮助信息
 
-Examples:
-  mo status                       Interactive dashboard
-  mo status --json                One machine-readable snapshot
-  mo status --watch --interval 2s Continuous NDJSON stream
+示例：
+  mo status                       打开交互式看板
+  mo status --json                输出一份机器可读的快照
+  mo status --watch --interval 2s 持续输出 NDJSON
 `
 
 // parseArgs applies Mole's CLI conventions to the flag package: help goes to

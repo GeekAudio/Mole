@@ -22,6 +22,7 @@ source "$_MOLE_CORE_DIR/timeouts.sh"
 source "$_MOLE_CORE_DIR/file_ops.sh"
 source "$_MOLE_CORE_DIR/help.sh"
 source "$_MOLE_CORE_DIR/ui.sh"
+source "$_MOLE_CORE_DIR/locale_zh_CN.sh"
 source "$_MOLE_CORE_DIR/app_protection.sh"
 source "$_MOLE_CORE_DIR/bundle_resolver.sh"
 source "$_MOLE_CORE_DIR/pkg_receipts.sh"
@@ -154,7 +155,7 @@ mole_print_release_highlights() {
     [[ -t 1 ]] || return 0
     [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
     body=$(curl -fsSL --connect-timeout "${MOLE_LOOKUP_CONNECT_TIMEOUT:-2}" --max-time "${MOLE_LOOKUP_MAX_TIME:-3}" \
-        "https://api.github.com/repos/tw93/mole/releases/tags/V${version}" 2> /dev/null |
+        "https://api.github.com/repos/GeekAudio/Mole/releases/tags/V${version}" 2> /dev/null |
         /usr/bin/plutil -extract body raw -o - - 2> /dev/null) || return 0
     titles=$(mole_release_highlight_titles "$body" 4)
     [[ -n "$titles" ]] || return 0
@@ -162,7 +163,7 @@ mole_print_release_highlights() {
     while IFS= read -r title; do
         printf '  %s %s\n' "$ICON_LIST" "$title"
     done <<< "$titles"
-    printf '  %s\n\n' "${GRAY}https://github.com/tw93/Mole/releases/tag/V${version}${NC}"
+    printf '  %s\n\n' "${GRAY}https://github.com/GeekAudio/Mole/releases/tag/V${version}${NC}"
 }
 
 # Update via Homebrew

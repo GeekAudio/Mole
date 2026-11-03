@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+MOLE_REPOSITORY="${MOLE_REPOSITORY:-GeekAudio/Mole}"
+INSTALL_SOURCE_REF=""
+
 # The installed entrypoint refuses to run as root, so a root install would
 # write every file and then fail its own verification probe with the wrong
 # cause. Refuse up front with the same message, before anything is written.
@@ -672,7 +675,7 @@ get_remote_main_commit_hash() {
     local response=""
     local commit_hash=""
     response=$(curl -fsSL --connect-timeout 3 --max-time 5 \
-        "https://api.github.com/repos/tw93/mole/commits/main" 2> /dev/null || true)
+        "https://api.github.com/repos/${MOLE_REPOSITORY}/commits/main" 2> /dev/null || true)
     commit_hash=$(printf '%s\n' "$response" |
         sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([a-f0-9]\{40\}\)".*/\1/p' | head -1)
     [[ "$commit_hash" =~ ^[0-9a-f]{40}$ ]] || return 1
@@ -684,11 +687,11 @@ source_archive_url() {
     local source_commit="${2:-}"
 
     if [[ "$branch" == "main" && "$source_commit" =~ ^[0-9a-f]{40}$ ]]; then
-        printf 'https://github.com/tw93/mole/archive/%s.tar.gz\n' "$source_commit"
+        printf 'https://github.com/%s/archive/%s.tar.gz\n' "$MOLE_REPOSITORY" "$source_commit"
     elif [[ "$branch" == "main" || "$branch" == "dev" ]]; then
-        printf 'https://github.com/tw93/mole/archive/refs/heads/%s.tar.gz\n' "$branch"
+        printf 'https://github.com/%s/archive/refs/heads/%s.tar.gz\n' "$MOLE_REPOSITORY" "$branch"
     else
-        printf 'https://github.com/tw93/mole/archive/refs/tags/%s.tar.gz\n' "$branch"
+        printf 'https://github.com/%s/archive/refs/tags/%s.tar.gz\n' "$MOLE_REPOSITORY" "$branch"
     fi
 }
 
@@ -737,6 +740,7 @@ resolve_source_dir() {
     if [[ "$branch" != "main" && "$branch" != "dev" ]]; then
         branch="$(normalize_release_tag "$branch")"
     fi
+    INSTALL_SOURCE_REF="$branch"
     local source_commit=""
     if [[ "$branch" == "main" ]]; then
         source_commit="${MOLE_INSTALL_COMMIT:-}"
@@ -785,7 +789,7 @@ resolve_source_dir() {
         local clone_succeeded=false
         if [[ -n "$source_commit" ]]; then
             if git init -q "$tmp/mole" > /dev/null 2>&1 &&
-                git -C "$tmp/mole" remote add origin https://github.com/tw93/mole.git > /dev/null 2>&1 &&
+                git -C "$tmp/mole" remote add origin "https://github.com/${MOLE_REPOSITORY}.git" > /dev/null 2>&1 &&
                 git -C "$tmp/mole" fetch -q --depth=1 origin "$source_commit" > /dev/null 2>&1 &&
                 git -C "$tmp/mole" checkout -q --detach FETCH_HEAD > /dev/null 2>&1; then
                 clone_succeeded=true
@@ -795,7 +799,7 @@ resolve_source_dir() {
             if [[ "$branch" != "main" ]]; then
                 git_args+=("--branch" "$branch")
             fi
-            if git clone "${git_args[@]}" https://github.com/tw93/mole.git "$tmp/mole" > /dev/null 2>&1; then
+            if git clone "${git_args[@]}" "https://github.com/${MOLE_REPOSITORY}.git" "$tmp/mole" > /dev/null 2>&1; then
                 clone_succeeded=true
             fi
         fi
@@ -839,9 +843,9 @@ get_latest_release_tag() {
         return 1
     fi
     tag=$(curl -fsSL --connect-timeout 2 --max-time 3 \
-        "https://api.github.com/repos/tw93/mole/releases/latest" 2> /dev/null |
+        "https://api.github.com/repos/${MOLE_REPOSITORY}/releases/latest" 2> /dev/null |
         sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
-    if [[ -z "$tag" || ! "$tag" =~ ^V[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    if [[ -z "$tag" || ! "$tag" =~ ^V[0-9]+\.[0-9]+\.[0-9]+(-zh\.[0-9]+)?$ ]]; then
         return 1
     fi
     printf '%s\n' "$tag"
@@ -870,9 +874,9 @@ get_latest_release_tag_from_git() {
     # install.sh has no timeout helper, so a stalled transfer is cut off by
     # git's own low-speed limit instead.
     git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=10 \
-        ls-remote --tags --refs https://github.com/tw93/mole.git 2> /dev/null |
+        ls-remote --tags --refs "https://github.com/${MOLE_REPOSITORY}.git" 2> /dev/null |
         awk -F/ '{print $NF}' |
-        grep -E '^V[0-9]+\.[0-9]+\.[0-9]+$' |
+        grep -E '^V[0-9]+\.[0-9]+\.[0-9]+(-zh\.[0-9]+)?$' |
         sort -V |
         tail -n 1
 }
@@ -890,7 +894,7 @@ normalize_release_tag() {
 
 release_checksums_url() {
     local tag="$1"
-    printf 'https://github.com/tw93/mole/releases/download/%s/SHA256SUMS\n' "$tag"
+    printf 'https://github.com/%s/releases/download/%s/SHA256SUMS\n' "$MOLE_REPOSITORY" "$tag"
 }
 
 download_release_checksums() {
@@ -927,7 +931,7 @@ verify_release_attestation() {
     # also blocks attestations produced by self-hosted runners, which a repo
     # compromise could otherwise introduce as a sidechannel.
     if gh attestation verify "$file" \
-        --repo tw93/Mole \
+        --repo "$MOLE_REPOSITORY" \
         --deny-self-hosted-runners \
         > /dev/null 2>&1; then
         return 0
@@ -1070,10 +1074,14 @@ write_install_channel_metadata() {
     local channel="$1"
     local commit_hash="${2:-}"
     local install_receipt="${3:-}"
+    local release_tag="${4:-}"
     local metadata_file="$CONFIG_DIR/install_channel"
 
     if [[ -n "$install_receipt" && ! "$install_receipt" =~ ^(heal|update)-[0-9]+-[0-9]+-[0-9]+$ ]]; then
         return 1
+    fi
+    if [[ -n "$release_tag" && ! "$release_tag" =~ ^[Vv]?[0-9]+\.[0-9]+\.[0-9]+(-zh\.[0-9]+)?$ ]]; then
+        release_tag=""
     fi
 
     mkdir -p "$CONFIG_DIR" 2> /dev/null || return 1
@@ -1090,6 +1098,9 @@ write_install_channel_metadata() {
         fi
         if [[ -n "$install_receipt" ]]; then
             printf 'INSTALL_RECEIPT=%s\n' "$install_receipt"
+        fi
+        if [[ -n "$release_tag" ]]; then
+            printf 'RELEASE_TAG=%s\n' "$(normalize_release_tag "$release_tag")"
         fi
     } > "$tmp_file" || {
         rm -f "$tmp_file" 2> /dev/null || true
@@ -1374,7 +1385,11 @@ download_binary() {
     fi
 
     local version
-    version=$(get_source_version)
+    if [[ "${INSTALL_SOURCE_REF:-}" =~ ^[Vv]?[0-9]+\.[0-9]+\.[0-9]+-zh\.[0-9]+$ ]]; then
+        version="$INSTALL_SOURCE_REF"
+    else
+        version=$(get_source_version)
+    fi
     if [[ -z "$version" ]]; then
         log_warning "Could not determine version for ${binary_name}, trying local build"
         if build_binary_from_source "$binary_name" "$staged_path" &&
@@ -1387,7 +1402,7 @@ download_binary() {
     local release_tag
     release_tag="$(normalize_release_tag "$version")"
     local asset_name="${binary_name}-darwin-${arch_suffix}"
-    local url="https://github.com/tw93/mole/releases/download/${release_tag}/${asset_name}"
+    local url="https://github.com/${MOLE_REPOSITORY}/releases/download/${release_tag}/${asset_name}"
 
     # Skip preflight network checks to avoid false negatives.
 
@@ -1424,7 +1439,7 @@ download_binary() {
         fallback_tag=$(get_latest_release_tag_from_git 2> /dev/null || true)
     fi
     if [[ -n "$fallback_tag" && "$fallback_tag" != "$release_tag" ]]; then
-        local fallback_url="https://github.com/tw93/mole/releases/download/${fallback_tag}/${asset_name}"
+        local fallback_url="https://github.com/${MOLE_REPOSITORY}/releases/download/${fallback_tag}/${asset_name}"
         start_line_spinner "Retrying ${binary_name} from ${fallback_tag}..."
         if curl_download_with_retry "$fallback_url" "$staged_path" 2> /dev/null; then
             if [[ -t 1 ]]; then stop_line_spinner; fi
@@ -1781,7 +1796,7 @@ perform_install() {
     if [[ "$install_channel" == "nightly" ]]; then
         commit_hash=$(get_source_commit_hash || true)
     fi
-    if ! write_install_channel_metadata "$install_channel" "$commit_hash" "${MOLE_INSTALL_RECEIPT:-}"; then
+    if ! write_install_channel_metadata "$install_channel" "$commit_hash" "${MOLE_INSTALL_RECEIPT:-}" "$INSTALL_SOURCE_REF"; then
         log_warning "Could not write install channel metadata"
     fi
 
@@ -1882,7 +1897,7 @@ perform_update() {
     if [[ "$install_channel" == "nightly" ]]; then
         commit_hash=$(get_source_commit_hash || true)
     fi
-    if ! write_install_channel_metadata "$install_channel" "$commit_hash" "${MOLE_INSTALL_RECEIPT:-}"; then
+    if ! write_install_channel_metadata "$install_channel" "$commit_hash" "${MOLE_INSTALL_RECEIPT:-}" "$INSTALL_SOURCE_REF"; then
         log_warning "Could not write install channel metadata"
     fi
 

@@ -7,6 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 source "$ROOT_DIR/lib/core/history.sh"
+source "$ROOT_DIR/lib/core/locale_zh_CN.sh"
 
 HISTORY_JSON=false
 HISTORY_LIMIT="$MOLE_HISTORY_DEFAULT_LIMIT"
@@ -61,6 +62,7 @@ main() {
     history_load_deletions "$(history_deletions_log_file)"
 
     if [[ "$HISTORY_JSON" == "true" ]]; then
+        MOLE_ZH_DISABLE=1
         history_render_json "$HISTORY_LIMIT"
     else
         history_render_text "$HISTORY_LIMIT"

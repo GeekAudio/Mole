@@ -31,7 +31,7 @@ source "$SCRIPT_DIR/lib/manage/whitelist.sh"
 
 print_header() {
     printf '\n'
-    echo -e "${PURPLE_BOLD}Optimize${NC}"
+    echo -e "${PURPLE_BOLD}优化${NC}"
 }
 
 # Extract a simple numeric value from JSON by key without a jq dependency.

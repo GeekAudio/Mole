@@ -490,7 +490,7 @@ _update_self_heal_reinstall() {
         heal_output=$(
             set -o pipefail
             curl -fsSL --connect-timeout 10 --max-time 60 \
-                "https://raw.githubusercontent.com/tw93/mole/main/install.sh" |
+                "https://raw.githubusercontent.com/GeekAudio/Mole/main/install.sh" |
                 MOLE_ASSUME_SUDO_AUTH="$assume_sudo" MOLE_VERSION="$update_ref" \
                     MOLE_INSTALL_COMMIT="$install_commit" MOLE_INSTALL_RECEIPT="$install_receipt" \
                     bash -s -- --prefix "$install_dir" --config "$config_dir" 2>&1
@@ -502,7 +502,7 @@ _update_self_heal_reinstall() {
         heal_output=$(
             set -o pipefail
             wget --timeout=10 --tries=3 -qO- \
-                "https://raw.githubusercontent.com/tw93/mole/main/install.sh" |
+                "https://raw.githubusercontent.com/GeekAudio/Mole/main/install.sh" |
                 MOLE_ASSUME_SUDO_AUTH="$assume_sudo" MOLE_VERSION="$update_ref" \
                     MOLE_INSTALL_COMMIT="$install_commit" MOLE_INSTALL_RECEIPT="$install_receipt" \
                     bash -s -- --prefix "$install_dir" --config "$config_dir" 2>&1
@@ -528,7 +528,7 @@ _update_print_manual_reinstall() {
     printf -v quoted_ref '%q' "$update_ref"
     printf -v quoted_install_dir '%q' "$install_dir"
     printf -v quoted_config_dir '%q' "$config_dir"
-    printf '%s Reinstall manually: curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | MOLE_VERSION=%s bash -s -- --prefix %s --config %s\n' \
+    printf '%s Reinstall manually: curl -fsSL https://raw.githubusercontent.com/GeekAudio/Mole/main/install.sh | MOLE_VERSION=%s bash -s -- --prefix %s --config %s\n' \
         "${ICON_REVIEW}" "$quoted_ref" "$quoted_install_dir" "$quoted_config_dir"
 }
 
@@ -585,23 +585,23 @@ mole_use_system_proxy_if_unset() {
 get_latest_version() {
     local location version
     location=$(curl -fsSLI --connect-timeout "${MOLE_LOOKUP_CONNECT_TIMEOUT:-2}" --max-time "${MOLE_LOOKUP_MAX_TIME:-3}" -o /dev/null -w '%{url_effective}' \
-        "https://github.com/tw93/Mole/releases/latest" 2> /dev/null || true)
+        "https://github.com/GeekAudio/Mole/releases/latest" 2> /dev/null || true)
     case "$location" in
-        https://github.com/tw93/[Mm]ole/releases/tag/[Vv]*) version="${location##*/}" ;;
+        https://github.com/GeekAudio/[Mm]ole/releases/tag/[Vv]*) version="${location##*/}" ;;
         *) return 0 ;;
     esac
     version="${version#[Vv]}"
-    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && printf '%s\n' "$version"
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-zh\.[0-9]+)?$ ]] && printf '%s\n' "$version"
     return 0
 }
 
 get_latest_version_from_github() {
     local version
     version=$(curl -fsSL --connect-timeout "${MOLE_LOOKUP_CONNECT_TIMEOUT:-2}" --max-time "${MOLE_LOOKUP_MAX_TIME:-3}" \
-        "https://api.github.com/repos/tw93/mole/releases/latest" 2> /dev/null |
+        "https://api.github.com/repos/GeekAudio/Mole/releases/latest" 2> /dev/null |
         /usr/bin/plutil -extract tag_name raw -o - - 2> /dev/null || true)
     version="${version#[Vv]}"
-    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && printf '%s\n' "$version"
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-zh\.[0-9]+)?$ ]] && printf '%s\n' "$version"
     return 0
 }
 
@@ -646,16 +646,16 @@ get_latest_version_from_git() {
         git -c credential.helper= -c core.askPass=/usr/bin/false \
         -c protocol.allow=never -c protocol.https.allow=always \
         -c http.sslVerify=true -C / \
-        ls-remote --tags --refs https://github.com/tw93/mole.git \
+        ls-remote --tags --refs https://github.com/GeekAudio/Mole.git \
         2> /dev/null); then
         tag=$(printf '%s\n' "$response" |
             awk -F/ '{print $NF}' |
-            grep -E '^V[0-9]+\.[0-9]+\.[0-9]+$' |
+            grep -E '^V[0-9]+\.[0-9]+\.[0-9]+(-zh\.[0-9]+)?$' |
             sort -V |
             tail -n 1)
         version="${tag#[Vv]}"
     fi
-    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && printf '%s\n' "$version"
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-zh\.[0-9]+)?$ ]] && printf '%s\n' "$version"
     return 0
 }
 
@@ -845,16 +845,20 @@ get_install_receipt() {
     _read_install_channel_field INSTALL_RECEIPT
 }
 
+get_install_release_tag() {
+    _read_install_channel_field RELEASE_TAG
+}
+
 get_latest_commit_from_github() {
     local lookup_scope="${1:-allow-git-fallback}"
     local response=""
     local sha=""
     if command -v curl > /dev/null 2>&1; then
         response=$(curl -fsSL --connect-timeout "${MOLE_LOOKUP_CONNECT_TIMEOUT:-2}" --max-time "${MOLE_LOOKUP_MAX_TIME:-3}" \
-            "https://api.github.com/repos/tw93/mole/commits/main" 2> /dev/null || true)
+            "https://api.github.com/repos/GeekAudio/Mole/commits/main" 2> /dev/null || true)
     elif command -v wget > /dev/null 2>&1; then
         response=$(wget --timeout="${MOLE_LOOKUP_MAX_TIME:-3}" --tries=1 -qO- \
-            "https://api.github.com/repos/tw93/mole/commits/main" 2> /dev/null || true)
+            "https://api.github.com/repos/GeekAudio/Mole/commits/main" 2> /dev/null || true)
     fi
     sha=$(printf '%s\n' "$response" |
         grep '"sha"[[:space:]]*:[[:space:]]*"[0-9a-f]\{40\}"' | head -1 | sed -E 's/.*"sha"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/') || sha=""
@@ -897,7 +901,7 @@ get_latest_commit_from_github() {
             git -c credential.helper= -c core.askPass=/usr/bin/false \
             -c protocol.allow=never -c protocol.https.allow=always \
             -c http.sslVerify=true -C / \
-            ls-remote https://github.com/tw93/mole.git refs/heads/main \
+            ls-remote https://github.com/GeekAudio/Mole.git refs/heads/main \
             2> /dev/null); then
             sha=$(printf '%s\n' "$response" |
                 awk '$2 == "refs/heads/main" { print $1; exit }')
@@ -1342,7 +1346,7 @@ update_mole() (
             echo -e "${ICON_REVIEW} Try again with: ${GRAY}mo update${NC}"
             exit 1
         fi
-        if [[ ! "$latest" =~ ^[Vv]?[0-9]+(\.[0-9]+)*$ ]]; then
+        if [[ ! "$latest" =~ ^[Vv]?[0-9]+(\.[0-9]+)*(-zh\.[0-9]+)?$ ]]; then
             log_error "Invalid version response: $latest"
             echo -e "${ICON_REVIEW} Try again later or use: ${GRAY}mo update --nightly${NC}"
             exit 1
@@ -1354,15 +1358,22 @@ update_mole() (
             switch_to_stable_channel=true
         fi
 
+        local installed_version="${VERSION}"
+        local installed_release_tag
+        installed_release_tag=$(get_install_release_tag)
+        if [[ -n "$installed_release_tag" ]]; then
+            installed_version="${installed_release_tag#[Vv]}"
+        fi
+
         if [[ "$switch_to_stable_channel" == "true" ]]; then
             install_label="Switching to stable channel..."
-        elif [[ "$VERSION" == "$latest" && "$force_update" != "true" ]]; then
+        elif [[ "$installed_version" == "$latest" && "$force_update" != "true" ]]; then
             repair_reason=$(manual_install_repair_reason || true)
             if [[ -n "$repair_reason" ]]; then
                 repair_install=true
             else
                 echo ""
-                echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest version, ${VERSION}"
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest version, ${installed_version}"
                 echo ""
                 exit 0
             fi
@@ -1385,7 +1396,7 @@ update_mole() (
     if [[ "$nightly_update" != "true" ]]; then
         installer_ref="V${latest#V}"
     fi
-    local installer_url="https://raw.githubusercontent.com/tw93/mole/${installer_ref}/install.sh"
+    local installer_url="https://raw.githubusercontent.com/GeekAudio/Mole/${installer_ref}/install.sh"
     local tmp_installer
     tmp_installer="$(mktemp_file)" || {
         log_error "Update failed"

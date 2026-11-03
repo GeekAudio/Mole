@@ -113,7 +113,7 @@ trap cleanup_temp_files EXIT INT TERM
 
 # Version and update helpers
 VERSION="1.68.0"
-MOLE_TAGLINE="Deep clean and optimize your Mac."
+MOLE_TAGLINE="深度清理并优化你的 Mac。"
 
 is_touchid_configured() {
     mole_pam_enables_touchid /etc/pam.d/sudo || mole_pam_enables_touchid /etc/pam.d/sudo_local
@@ -131,14 +131,14 @@ source "$SCRIPT_DIR/lib/manage/remove.sh"
 _main_menu_controls_line() {
     local touchid_configured="$1"
     local show_update="$2"
-    local controls="${GRAY}↑↓  |  Enter  |  M More  |  V Version"
+    local controls="${GRAY}↑↓  |  回车  |  M 更多  |  V 版本"
     if [[ "$touchid_configured" != "true" ]]; then
-        controls="${controls}  |  T TouchID"
+        controls="${controls}  |  T 触控 ID"
     fi
     if [[ "$show_update" == "true" ]]; then
-        controls="${controls}  |  U Update"
+        controls="${controls}  |  U 更新"
     fi
-    controls="${controls}  |  Q Quit${NC}"
+    controls="${controls}  |  Q 退出${NC}"
     printf '%s' "$controls"
 }
 
@@ -183,11 +183,11 @@ show_main_menu() {
 
     printf '\r\033[2K\n'
 
-    printf '\r\033[2K%s\n' "$(show_menu_option 1 "Clean        Free up disk space" "$([[ $selected -eq 1 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 2 "Uninstall    Remove apps completely" "$([[ $selected -eq 2 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 3 "Optimize     Refresh caches and services" "$([[ $selected -eq 3 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 4 "Analyze      Explore disk usage" "$([[ $selected -eq 4 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 5 "Status       Monitor system health" "$([[ $selected -eq 5 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 1 "清理        释放磁盘空间" "$([[ $selected -eq 1 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 2 "卸载        彻底卸载应用" "$([[ $selected -eq 2 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 3 "优化        刷新缓存与系统服务" "$([[ $selected -eq 3 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 4 "分析        查看磁盘占用" "$([[ $selected -eq 4 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 5 "状态        监控系统状态" "$([[ $selected -eq 5 ]] && echo true || echo false)")"
 
     if [[ -t 0 ]]; then
         printf '\r\033[2K\n'

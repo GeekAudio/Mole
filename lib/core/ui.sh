@@ -328,6 +328,10 @@ show_menu_option() {
     local text="$2"
     local selected="$3"
 
+    if declare -F mole_zh_translate > /dev/null 2>&1; then
+        text="$(mole_zh_translate "$text")"
+    fi
+
     if [[ "$selected" == "true" ]]; then
         echo -e "${CYAN}${ICON_ARROW} $number. $text${NC}"
     else

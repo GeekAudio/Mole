@@ -25,18 +25,18 @@ var (
 // usageText is the help every other Mole subcommand prints by hand. The Go flag
 // package would otherwise render "Usage of /usr/local/bin/analyze-go:", naming a
 // bundled binary the user never typed, so the text is written out here instead.
-const usageText = `Usage: mo analyze [OPTIONS] [PATH]
+const usageText = `用法：mo analyze [选项] [路径]
 
-Explore disk usage. Without PATH, scans a machine-wide overview.
+分析磁盘占用。不指定路径时，扫描并显示整台 Mac 的概览。
 
-Options:
-  --json          Output the analysis as JSON instead of the interactive TUI
-  -h, --help      Show this help message
+选项：
+  --json          以 JSON 输出分析结果
+  -h, --help      显示此帮助信息
 
-Examples:
-  mo analyze                 Machine-wide overview
-  mo analyze ~/Library       Scan one directory
-  mo analyze --json /Volumes Machine-readable output
+示例：
+  mo analyze                 查看整台 Mac 的概览
+  mo analyze ~/Library       扫描指定目录
+  mo analyze --json /Volumes 以机器可读格式输出
 `
 
 // parseArgs applies Mole's CLI conventions to the flag package: help goes to
