@@ -72,8 +72,6 @@ jobs:
           path: bin/*-darwin-*
           retention-days: 1
 
-  release:
-    name: Publish Release
   app:
     name: Build universal macOS app
     if: github.repository == 'GeekAudio/Mole'
@@ -99,6 +97,9 @@ jobs:
           path: $RUNNER_TEMP/mole-app-assets/Mole-zh-macOS-universal.zip
           retention-days: 1
 
+
+  release:
+    name: Publish Release
     needs: [build, app]
     runs-on: ubuntu-latest
     timeout-minutes: 20
