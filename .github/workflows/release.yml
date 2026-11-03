@@ -72,35 +72,9 @@ jobs:
           path: bin/*-darwin-*
           retention-days: 1
 
-  app:
-    name: Build universal macOS app
-    if: github.repository == 'GeekAudio/Mole'
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.release_tag || github.ref }}
-
-      - name: Build and package app
-        run: |
-          set -euo pipefail
-          ./MoleApp/scripts/build-app.sh --universal --output "$RUNNER_TEMP/mole-app"
-          mkdir -p "$RUNNER_TEMP/mole-app-assets"
-          cp "$RUNNER_TEMP/mole-app/Mole-zh-macOS-universal.zip" "$RUNNER_TEMP/mole-app-assets/"
-
-      - name: Upload app artifact
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: mole-app
-          path: $RUNNER_TEMP/mole-app-assets/Mole-zh-macOS-universal.zip
-          retention-days: 1
-
-
   release:
     name: Publish Release
-    needs: [build, app]
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -138,12 +112,6 @@ jobs:
           pattern: binaries-*
           merge-multiple: true
 
-      - name: Download universal app
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: mole-app
-          path: bin
-
       - name: Display structure of downloaded files
         run: ls -R bin/
 
@@ -166,7 +134,6 @@ jobs:
             bin/status-darwin-*
             bin/binaries-darwin-*.tar.gz
             bin/SHA256SUMS
-            bin/Mole-zh-macOS-universal.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
@@ -174,7 +141,7 @@ jobs:
         with:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           name: ${{ format('Mole 中文版 {0}', inputs.release_tag) }}
-          body: 本版本自动合并了上游 tw93/Mole 的更新，包含简体中文界面和通用 macOS 图形应用。
+          body: 本版本自动合并了上游 tw93/Mole 的更新，并提供简体中文界面。
           files: bin/*
           generate_release_notes: false
           draft: false
