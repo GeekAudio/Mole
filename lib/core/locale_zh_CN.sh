@@ -6,6 +6,21 @@
 mole_zh_translate() {
     local text="${1:-}" pair source_text target_text
     local -a translations=(
+        # --- 1.69.0 上游新增文案 ---
+        'would prune, build cache unused for 7 days|将清理 7 天未使用的构建缓存'
+        'would prune dangling images|将清理无标签镜像'
+        'skipped (whitelist)|白名单内，已跳过'
+        'would skip (whitelist)|白名单内，将跳过'
+        'skipped (process state unknown)|跳过（进程状态未知）'
+        'skipped (backup in progress)|跳过（正在备份）'
+        'skipped (status unknown)|跳过（状态未知）'
+        'OrbStack container data|OrbStack 容器数据'
+        'T3 Code caches|T3 Code 缓存'
+        'Time Machine snapshots|时间机器快照'
+        'Already on latest version, |已是最新版本，'
+        'Reinstall manually: |请手动重装：'
+        ' reclaimable| 可回收'
+        ' in use| 使用中'
         'Deep clean and optimize your Mac.|深度清理并优化你的 Mac。'
         'Free up disk space|释放磁盘空间'
         'Remove apps completely|彻底卸载应用'
@@ -285,6 +300,10 @@ mole_zh_maybe_translate() {
         " folders" cache Cache database config "Space Select" "Enter Confirm" "Enter Apply"
         "Esc " Mole apps files " paths" directories directory "without making changes"
         "to apply" "to confirm" "to cancel" "to quit" "to return" "to continue" "to skip"
+        # 1.69.0 新增文案的触发词（区分大小写，故补小写变体）
+        "would " "skipped (" "Time Machine snapshots" "T3 Code caches"
+        "OrbStack container data" "Already on latest" "Reinstall manually"
+        "reclaimable" " in use"
     )
     for trigger in "${triggers[@]}"; do
         [[ "$rendered" == *"$trigger"* ]] && return 0
