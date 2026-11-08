@@ -15,6 +15,8 @@ Scoped follow-up on 2026-10-18: Mole CLI (macOS) `8f2671cd` adapts the scan-requ
 
 Released (V1.63.0): `lib/optimize/tasks.sh` refreshes NotificationCenter through its current-user launchd service and mDNSResponder through the allowlisted label in its fixed system plist. Neither operation falls back to matching a process name. The two-CLI queue remains owned by the Windows branch record; its Optimize has no corresponding host restart. The private app-owned record tracks the app comparison separately. Old-source refusal/target tests fail as expected, all 141 targeted Optimize tests and the complete local check/test workflows pass. The public V1.63.0 source and isolated script update were verified on 2026-10-24; no live system-service restart was performed.
 
+Follow-up on 2026-11-05 (#1867): when macOS 27 refuses the launchd signal, Mole CLI (macOS) retries once as the `_mdnsresponder` account with `killall -u _mdnsresponder`. Mole Mac, Mole for Windows and Mole CLI (Windows) have no DNS cache refresh: Not applicable.
+
 ## 2026-10-25 Existing CLI capability follow-up
 
 Frozen sources: Mole CLI (macOS) `ba96efe8` on `main`, Mole CLI (Windows) `973c6e1d` on `windows`; both matched their tracking refs after fetch. App-owned comparisons retain their private source and test receipts. This batch changes existing cleanup, uninstall, optimization and status behavior, with no new command, flag, setting or background service. The two-CLI queue remains owned by the Windows branch record. Implementation commits are `797a484c` (uninstall) and `52c5a7fa` (cleanup/purge). `scripts/test.sh` reports all tests passed, `scripts/check.sh --no-format` passes, and the Go tests and `make build` pass.
@@ -129,3 +131,69 @@ Implemented in source (Mole CLI (macOS), `main`): a successful stable `mo update
 
 - Mole Mac: Not applicable. Sparkle shows each version's notes before installing and the in-app What's New card lists them after.
 - Mole CLI (Windows): Implemented in source (`884eedc0`): after a pull that changes `VERSION`, `mo update` prints the published `V<version>-windows` release's changelog titles and link.
+
+## 2026-11-04 Byte sizes that round up to the next unit
+
+Implemented in source (Mole CLI (macOS), `main`, `2335f055`, tw93/Mole#1914): `units.BytesSI` picked the unit before rounding to one decimal, so `mo analyze` printed 999,999 B as "1000.0 kB" where Finder shows 1 MB; a value that rounds to 1000.0 now moves up one unit (`internal/units/bytes.go`, `TestBytesSI`). Not released until the next tagged version ships it.
+
+- Mole Mac: Not applicable. Sizes go through Foundation's `ByteCountFormatter`, which picks the unit after rounding.
+- Mole CLI (Windows): Implemented (`f07253a7`).
+- Mole for Windows: Implemented (`912e4c50`).
+
+## 2026-11-04 APFS snapshots from other backup apps
+
+Implemented in source (Mole CLI (macOS), `main`, `a08c6885`, tw93/Mole#1916): Synology Active Backup, Carbon Copy Cloner and similar tools leave APFS snapshots on the data volume that pin deleted files like Time Machine ones, and Mole counted only `com.apple.TimeMachine.<date>` names and probed only with Time Machine configured. `mo clean` now prints a read-only `APFS snapshots` row (count plus owner prefix) from `tmutil listlocalsnapshots /` whether or not Time Machine is set up, through `mole_local_snapshot_rows` in `lib/clean/snapshots.sh`; `mo analyze` counts the same names. Apple's other `com.apple.*` snapshots stay out, and nothing is sized or deleted. Not released until the next tagged version ships it.
+
+- Mole Mac: Implemented (`11ad35c68`). One read-only row names the owners, with no size and no delete; `PurgeableSpaceManager.snapshotCount` and `tmutil deletelocalsnapshots /` stay Time Machine's alone.
+- Mole CLI (Windows): Not applicable. Windows has no APFS snapshots; Volume Shadow Copies are a different mechanism and are not in scope.
+- Mole for Windows: Not applicable, for the same reason.
+
+## 2026-11-05 Caches/Google left to its own rows
+
+Source: a 2026-10-28 support bundle from a Mac with only Mole CLI (macOS) 1.64.0: `~/Library/Caches/Google` failed on seven clean runs while Chrome and Google Drive ran. The generic "User app cache" sweep took the whole folder, Chrome's live HTTP cache included, past the Chrome row that waits for Chrome to quit.
+
+Implemented in source (Mole CLI (macOS), `main`, `d2341ba9`): the sweep skips `Caches/Google`; `clean_browsers` cleans `Caches/Google/Chrome` after Chrome quits and Android Studio keeps its own row. Locked by `clean_user_essentials leaves Caches/Google to the Chrome and Android Studio rows`, red on the old code. Next check: delivery in the next Mole CLI release.
+
+- Mole Mac: Already implemented (`coveredCachePrefixes` lists `Google`, so the generic scan never offers the folder).
+- Mole CLI (Windows): Not applicable (macOS path).
+- Mole for Windows: Not applicable (macOS path).
+
+## 2026-11-05 Stored timestamps in the future
+
+Source: Mole Mac fixed a freshness window that read a stamp from the future (the system clock was set back) as fresh, so a stale answer lasted until the clock caught up. The rule is `0 <= age < window`: a negative age reads as expired.
+
+Implemented in source (Mole CLI (macOS), `main`): the temp-root prune stamp (`prune_stale_mole_tmpdir_leftovers` used `find -mmin -N`, which matches a future mtime, so the daily pass was skipped), the Homebrew cleanup throttle (`brew_cleanup_ran_recently`), the pkgutil receipt cache (`lib/core/pkg_receipts.sh`), the uninstall metadata refresh TTL (the awk in `bin/uninstall.sh:_scan_finalize_index`) and the Analyze overview and scan caches (`cmd/analyze/cache.go`, through `stampWithin`) now treat a negative age as expired. Already guarded and unchanged: `check_for_updates` (`now >= checked`), the installed-apps cache in `lib/clean/apps.sh` (`age -ge 0`), the Status collector timers (in-process `time.Now()` values carry a monotonic reading). Age checks that decide whether to delete or list an old item keep a future-dated one, the safe direction, and are unchanged; so is the uninstall metadata lock, because stealing a live lock after a small clock step back is worse than waiting out its four-second retry. Bats cases in `tests/user_file_ops.bats`, `tests/clean_system_maintenance.bats` and `tests/uninstall_scan_bash32.bats` and Go cases in `cmd/analyze/cache_clock_test.go` fail on the previous code. Not released until the next tagged version ships it.
+
+- Mole Mac: Implemented there first (2026-11-05).
+- Mole CLI (Windows): Implemented in source for the installed-app inventory cache (`SYNC.md` on `windows`); its update-notice state was already guarded.
+- Mole for Windows: Implemented there in the same pass (2026-11-05), through one shared window helper and a source gate.
+
+## 2026-11-06 T3 Code worktrees and preview caches
+
+Source: contributor PRs #1924 and #1925. T3 Code keeps agent checkouts in `~/.t3/worktrees` and a Chromium profile per preview browser under `~/Library/Application Support/t3code-v2` (`T3 Code (Alpha)` is the profile older builds left behind); both names match the T3 Code source (`resolveUserDataPath`, `PREVIEW_PARTITION_PREFIX`).
+
+Implemented in source (Mole CLI (macOS), `main`): `433fde60` adds `~/.t3/worktrees` to `MOLE_PURGE_DEFAULT_SEARCH_PATHS`, so `mo purge`, the `mo clean` project-cache sweep and the report-only "AI agent worktrees" row reach it; the worktrees themselves and the rest of `~/.t3` stay out. `b0dc6fef` adds `clean_t3code_desktop_caches`, which takes only `Cache` and `Code Cache` under `Partitions/t3code-preview-*` of those two profiles while no T3 Code app runs. Verified 2026-11-06 on the test Mac with T3 Code 0.1.7: running, a real-mode call removed nothing; quit, it removed the two leaves' contents, every other profile file hashed the same, and the app rebuilt them on relaunch; a real `git worktree` under `~/.t3/worktrees` lost only its ignored, week-old `target/` to `mo purge`, its tracked files stayed, and `mo clean` showed the 1.15GB report row. Next check: delivery in the next Mole CLI release.
+
+- Mole Mac: Implemented in source (2026-11-06): project artifacts inside `~/.t3/worktrees` and the same two preview cache leaves, withheld while T3 Code runs. The app-owned record owns the comparison.
+- Mole CLI (Windows): Implemented for the preview caches (`6088c9e3`, read in a VM on 2026-11-07). `.t3\worktrees` is not a `mo purge` root.
+- Mole for Windows: Implemented for the preview caches (`4f2dddb9`). It has no project artifact surface, so the worktrees are Not applicable.
+
+## 2026-11-06 Docker on a local engine only, and running Electron caches
+
+Source: issue #1922 and a Docker Desktop 4.98 run on the test Mac. Every Docker query in Mole CLI (macOS) now reads the endpoint first (`mole_docker_endpoint_is_local`, `docker context inspect`, which never dials the engine) and skips a remote or unknown one; `mo clean` prunes BuildKit cache unused for 7 days and dangling images through Docker itself, only on a local engine that already answers; the Large files row drops types and reclaimable figures under 1MB. Separately, the generic Application Support sweep cleared Code Cache and GPUCache of running Electron apps (Docker Desktop, VS Code, T3 Code); it now skips a folder whose `SingletonLock` names a live pid.
+
+Implemented in source (Mole CLI (macOS), `main`): `4075102a` (Docker, I-38) and `8abe329d` (Application Support, I-39). Verified 2026-11-06 on the test Mac: stopped engine, no prune row and the 1.62GB Docker Desktop data row; running engine, the prune row and the shortened storage row, and Application Support down from 27.3MB to 16.2MB as Docker Desktop's caches stayed; `remote-tcp` and `remote-ssh` contexts, no engine query, the local data row, 17s instead of 25s. Next check: delivery in the next Mole CLI release.
+
+- Mole Mac: Not applicable for the endpoint gate and the daemon prune, since it never runs `docker` and a CLI owner command does not transfer by itself. Implemented in source (2026-11-06) for the running-app check: folders named `Code`, `Docker Desktop` and `t3code-v2` already answered to their running apps, and an Application Support folder that matches no running app is now held while the process its `SingletonLock` names is alive. The app-owned record owns the comparison.
+- Mole CLI (Windows): Not applicable. It never runs `docker`: `Clear-DockerCaches` keeps the build cache, and the running-app check is `Clear-MoleAppCache`'s named owners.
+- Mole for Windows: Not applicable. It never runs `docker`; its one Docker row is Docker Desktop's log folder, and every cache rule names its owner process.
+
+## 2026-11-07 Purge editor commands
+
+Source: PR #1940. `mo purge --paths` now runs an `EDITOR` that holds arguments, such as `code --wait`, and returns the editor's failure instead of reporting success.
+
+Implemented in source (Mole CLI (macOS), `main`): `4917abd1`, merged in `2cc4f227`.
+
+- Mole CLI (Windows): Not applicable. `bin/purge.ps1` opens `notepad.exe` directly and never reads `EDITOR`.
+- Mole Mac: Not applicable. It has no purge paths editor and never reads `EDITOR`.
+- Mole for Windows: Not applicable. It has no purge paths editor and never reads `EDITOR`.

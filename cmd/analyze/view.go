@@ -35,7 +35,7 @@ func (m model) View() string {
 			if !m.localSnapshotFresh {
 				freshnessLabel = " · 上次成功检查"
 			}
-			fmt.Fprintf(&b, "%s时间机器本地快照：%d %s · 仅快照占用未计入下方%s%s\n",
+			fmt.Fprintf(&b, "%s%d %s · 仅快照占用未计入下方%s%s\n",
 				colorGray, m.localSnapshotCount, snapshotLabel, freshnessLabel, colorReset)
 		}
 		if m.overviewScanning {
