@@ -17,7 +17,7 @@ jobs:
   sync-and-release:
     if: github.repository == 'GeekAudio/Mole'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: 检出中文分支
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -25,28 +25,73 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      # 冲突分两类：白名单里的文件按固定规则自动解决，其余一律中止并报错。
+      # 白名单之外出现冲突，说明上游改了中文化真正依赖的代码，必须人工看。
       - name: 合并上游主分支
         id: sync
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote add upstream https://github.com/tw93/Mole.git
+          git remote add upstream https://github.com/tw93/Mole.git 2> /dev/null ||
+            git remote set-url upstream https://github.com/tw93/Mole.git
           git fetch upstream main --no-tags
           before=$(git rev-parse HEAD)
+
+          # 白名单：README.md 与 view.go 保留中文版；mole 只差版本号与标语一行。
+          known="README.md cmd/analyze/view.go mole"
+
           if ! git merge --no-edit --no-ff upstream/main; then
             conflicts=$(git diff --name-only --diff-filter=U)
-            if [[ "$conflicts" == "README.md" ]]; then
-              git checkout --ours -- README.md
-              git add README.md
-              git commit --no-edit
-              echo "::notice::上游 README 与中文 README 冲突，已保留本仓库的中文版本。"
-            else
+            unexpected=""
+            for f in $conflicts; do
+              printf '%s\n' $known | grep -qxF "$f" || unexpected="$unexpected $f"
+            done
+            if [[ -n "$unexpected" ]]; then
               git merge --abort || true
-              echo "::error::上游更新与中文分支在 README.md 以外存在冲突，已停止同步和发布。请先解决冲突。"
+              echo "::error::上游更新与中文分支在以下文件冲突，已停止同步，请人工处理：$unexpected"
               exit 1
             fi
+
+            for f in README.md cmd/analyze/view.go; do
+              if printf '%s\n' $conflicts | grep -qxF "$f"; then
+                git checkout --ours -- "$f"
+                git add -- "$f"
+                echo "::notice::$f 冲突已保留本仓库的中文版本。"
+              fi
+            done
+
+            # mole：版本号必须跟上游走，否则打出的中文标签是错的；标语保留中文。
+            if printf '%s\n' $conflicts | grep -qxF "mole"; then
+              ours_tagline=$(git show :2:mole | sed -n 's/^MOLE_TAGLINE="\(.*\)"$/\1/p' | head -1)
+              upstream_version=$(git show :3:mole | sed -n 's/^VERSION="\([^"]*\)"$/\1/p' | head -1)
+              if [[ -z "$ours_tagline" || -z "$upstream_version" ]]; then
+                git merge --abort || true
+                echo "::error::无法从冲突的 mole 中读出 VERSION 或 MOLE_TAGLINE，已停止同步。"
+                exit 1
+              fi
+              git checkout --theirs -- mole
+              TAGLINE="$ours_tagline" python3 - <<'PY'
+          import os
+          import re
+
+          path = "mole"
+          text = open(path, encoding="utf-8").read()
+          tagline = os.environ["TAGLINE"]
+          new, count = re.subn(
+              r'^MOLE_TAGLINE=".*"$', 'MOLE_TAGLINE="%s"' % tagline, text, count=1, flags=re.M
+          )
+          if count != 1:
+              raise SystemExit("无法在 mole 中写入中文标语")
+          open(path, "w", encoding="utf-8").write(new)
+          PY
+              git add -- mole
+              echo "::notice::mole 冲突已解决：版本号取上游 ${upstream_version}，标语保留中文。"
+            fi
+
+            git commit --no-edit
           fi
+
           after=$(git rev-parse HEAD)
           if [[ "$before" == "$after" ]]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -56,6 +101,25 @@ jobs:
           git push origin HEAD:main
           echo "changed=true" >> "$GITHUB_OUTPUT"
           echo "已将上游更新合并到中文主分支：\`$after\`。" >> "$GITHUB_STEP_SUMMARY"
+
+      # 自动解冲突不能盲信：view.go 的中文格式串若与上游参数个数对不上，
+      # go vet 的 printf 检查会在这里拦下，不会推上去一个会打印 %!s(MISSING) 的版本。
+      - name: 安装 Go
+        if: steps.sync.outputs.changed == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: 校验合并结果
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          bash -n mole
+          grep -qE '^VERSION="[0-9]+\.[0-9]+\.[0-9]+"$' mole
+          grep -q '^MOLE_TAGLINE="深度清理并优化你的 Mac。"$' mole
+          go vet ./cmd/...
+          echo "合并结果校验通过。" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 为同步结果创建中文版本标签
         if: steps.sync.outputs.changed == 'true'
