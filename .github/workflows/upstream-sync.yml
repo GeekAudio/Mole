@@ -98,12 +98,20 @@ jobs:
             echo "上游没有新提交，无需同步。" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          git push origin HEAD:main
+          # 只在这里完成本地合并，推送放到校验通过之后，
+          # 否则校验失败时坏的合并已经进了 main，闸门等于没有。
           echo "changed=true" >> "$GITHUB_OUTPUT"
-          echo "已将上游更新合并到中文主分支：\`$after\`。" >> "$GITHUB_STEP_SUMMARY"
+          echo "已在本地合并上游更新：\`$after\`，校验通过后才推送。" >> "$GITHUB_STEP_SUMMARY"
 
       # 自动解冲突不能盲信：view.go 的中文格式串若与上游参数个数对不上，
       # go vet 的 printf 检查会在这里拦下，不会推上去一个会打印 %!s(MISSING) 的版本。
+      #
+      # 必须交叉到 darwin 再 vet：cmd/analyze 整包（cache.go、scanner.go、view.go 等
+      # 38 个文件）都带 //go:build darwin，而 runner 是 ubuntu。不指定 GOOS 时
+      # darwin 文件全被排除，只留下没有构建标签的 cache_clock_test.go，
+      # 于是报 undefined: stampWithin —— 那是假警报，不是合并出错。
+      # 上游这个测试文件漏了 //go:build darwin，我们不擅自改上游文件，
+      # 只把校验放到正确的平台上。全仓无 cgo，可安全 CGO_ENABLED=0 交叉。
       - name: 安装 Go
         if: steps.sync.outputs.changed == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -118,8 +126,15 @@ jobs:
           bash -n mole
           grep -qE '^VERSION="[0-9]+\.[0-9]+\.[0-9]+"$' mole
           grep -q '^MOLE_TAGLINE="深度清理并优化你的 Mac。"$' mole
-          go vet ./cmd/...
+          CGO_ENABLED=0 GOOS=darwin go vet ./cmd/...
           echo "合并结果校验通过。" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 推送合并结果
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git push origin HEAD:main
+          echo "已推送到中文主分支：\`$(git rev-parse HEAD)\`。" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 为同步结果创建中文版本标签
         if: steps.sync.outputs.changed == 'true'
