@@ -3,6 +3,11 @@
 # Only terminal-bound display output is translated; captured values, files,
 # JSON, command arguments, and machine-readable output keep upstream text.
 
+# 本文件有意覆写 echo/printf，在输出层做中文替换，因此必然触发以下告警：
+# SC2059 格式串来自调用方；SC2030/SC2031 指 printf 的退出码在命令替换的
+# 子 shell 中丢失（只影响状态码，不影响输出内容），属于已知取舍。
+# shellcheck disable=SC2059,SC2030,SC2031
+
 mole_zh_translate() {
     local text="${1:-}" pair source_text target_text
     local -a translations=(
