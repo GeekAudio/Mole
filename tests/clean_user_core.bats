@@ -823,6 +823,52 @@ EOF
     rm -rf "$test_home"
 }
 
+@test "the user cache sweep keeps Buzz models and plugins even with a custom whitelist" {
+    # Buzz keeps downloaded Whisper models, installed plugins and the user's
+    # presentation CSS under ~/Library/Caches/Buzz, the folder its FAQ points
+    # users to. clean_user_essentials removes whole children of
+    # ~/Library/Caches, and a saved custom whitelist replaces the defaults, so
+    # only the always-merged safety list can keep the folder.
+    local fixture="$HOME/buzz-sweep-home"
+    mkdir -p "$fixture/.config/mole" \
+        "$fixture/Library/Caches/Buzz/models/whisper" \
+        "$fixture/Library/Caches/Buzz/plugins/example" \
+        "$fixture/Library/Caches/com.example.disposable"
+    printf 'weights\n' > "$fixture/Library/Caches/Buzz/models/whisper/large-v3.pt"
+    printf 'plugin\n' > "$fixture/Library/Caches/Buzz/plugins/example/plugin.py"
+    printf 'cache\n' > "$fixture/Library/Caches/com.example.disposable/data"
+    printf '%s\n' "$fixture/.cache/keep-my-own-thing/*" > "$fixture/.config/mole/whitelist"
+
+    run env -u DENO_DIR HOME="$fixture" PROJECT_ROOT="$PROJECT_ROOT" \
+        MOLE_TEST_MODE=1 MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+ps() { printf '  PID  PPID COMM ARGS\n'; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+clean_trash() { :; }
+_clean_recent_items() { :; }
+_clean_mail_downloads() { :; }
+clean_user_essentials
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    # The ordinary cache is the positive control: the sweep really ran.
+    [ ! -e "$fixture/Library/Caches/com.example.disposable/data" ] || {
+        echo "$output"
+        return 1
+    }
+    [ -f "$fixture/Library/Caches/Buzz/models/whisper/large-v3.pt" ] || {
+        echo "$output"
+        return 1
+    }
+    [ -f "$fixture/Library/Caches/Buzz/plugins/example/plugin.py" ] || return 1
+    rm -rf "$fixture"
+}
+
 @test "clean_trash dry run stays silent for compiled-model-only items" {
     mkdir -p "$HOME/.Trash/model/com.apple.e5rt.e5bundlecache"
     touch "$HOME/.Trash/model/com.apple.e5rt.e5bundlecache/weights.bin"
@@ -1972,7 +2018,6 @@ start_section_spinner() { :; }
 stop_section_spinner() { :; }
 note_activity() { :; }
 bytes_to_human() { printf '0B\n'; }
-directory_has_entries() { return 1; }
 clean_support_app_data() { :; }
 safe_clean() {
     case "${*: -1}" in
@@ -2366,93 +2411,6 @@ EOF
     [[ "$output" != *"SHOULD_NOT_SIZE_SCAN"* ]]
 }
 
-@test "container cache counters run in the caller's shell and restore glob options" {
-    # Own HOME: earlier cases leave Group Containers fixtures in the shared one,
-    # and every extra candidate adds a counter call.
-    local counter_home
-    counter_home=$(mktemp -d "${BATS_TEST_DIRNAME}/tmp-counter-home.XXXXXX")
-    run env HOME="$counter_home" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true /bin/bash --noprofile --norc << 'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/clean/user.sh"
-start_section_spinner() { :; }
-stop_section_spinner() { :; }
-bytes_to_human() { echo "0B"; }
-note_activity() { :; }
-should_protect_data() { return 1; }
-should_protect_path() { return 1; }
-is_path_whitelisted() { return 1; }
-holds_compiled_model_cache() { return 1; }
-_mole_user_cache_owner_process_state() { return 1; }
-_MOLE_COMPLETE_LSOF_MODE=direct
-lsof() { return 1; }
-run_with_timeout() { shift; "$@"; }
-get_path_size_kb() { printf '7\n'; }
-record_dry_run_cleanup_target() { return 0; }
-files_cleaned=0
-total_size_cleaned=0
-total_items=0
-
-# A call made through $(...) increments this counter in a subshell, so the
-# owning shell sees zero: the count only survives a direct call.
-eval "$(declare -f cache_top_level_entry_count_capped | sed '1s/^cache_top_level_entry_count_capped/_counted_entry_count_capped/')"
-COUNTER_CALLS=0
-cache_top_level_entry_count_capped() {
-    COUNTER_CALLS=$((COUNTER_CALLS + 1))
-    _counted_entry_count_capped "$@"
-}
-
-probe="$HOME/counter-probe"
-mkdir -p "$probe"
-touch "$probe/.hidden" "$probe/a" "$probe/b"
-shopt -u nullglob dotglob
-cache_top_level_entry_count_capped "$probe" 101
-printf 'DIRECT_COUNT=%s\n' "$CACHE_TOP_LEVEL_ENTRY_COUNT"
-cache_top_level_entry_count_capped "$probe" 2
-printf 'CAPPED_COUNT=%s\n' "$CACHE_TOP_LEVEL_ENTRY_COUNT"
-printf 'OFF_AFTER=%s%s\n' "$(shopt -q nullglob && echo N || echo n)" "$(shopt -q dotglob && echo D || echo d)"
-shopt -s nullglob dotglob
-cache_top_level_entry_count_capped "$probe" 101
-printf 'ON_AFTER=%s%s\n' "$(shopt -q nullglob && echo N || echo n)" "$(shopt -q dotglob && echo D || echo d)"
-shopt -u nullglob dotglob
-COUNTER_CALLS=0
-
-container="$HOME/Library/Containers/com.example.counter"
-mkdir -p "$container/Data/Library/Caches/one"
-touch "$container/Data/Library/Caches/one/data.tmp"
-total_size=0
-total_size_partial=false
-cleaned_count=0
-found_any=false
-precise_size_limit=64
-precise_size_used=0
-process_container_cache "$container"
-printf 'CONTAINER_CALLS=%s\n' "$COUNTER_CALLS"
-
-mkdir -p "$HOME/Library/Group Containers/group.com.example.counter/Library/Caches"
-for i in $(seq 1 101); do
-    touch "$HOME/Library/Group Containers/group.com.example.counter/Library/Caches/file-$i.tmp"
-done
-clean_group_container_caches
-printf 'TOTAL_CALLS=%s\n' "$COUNTER_CALLS"
-printf 'GLOBS_AFTER=%s%s\n' "$(shopt -q nullglob && echo N || echo n)" "$(shopt -q dotglob && echo D || echo d)"
-EOF
-
-    rm -rf "$counter_home" # SAFE: this test's own mktemp HOME
-    [ "$status" -eq 0 ] || {
-        echo "$output"
-        return 1
-    }
-    [[ "$output" == *"DIRECT_COUNT=3"* ]] || return 1
-    [[ "$output" == *"CAPPED_COUNT=2"* ]] || return 1
-    [[ "$output" == *"OFF_AFTER=nd"* ]] || return 1
-    [[ "$output" == *"ON_AFTER=ND"* ]] || return 1
-    [[ "$output" == *"CONTAINER_CALLS=1"* ]] || return 1
-    [[ "$output" == *"Group Containers logs/caches"* ]] || return 1
-    [[ "$output" == *"TOTAL_CALLS=2"* ]] || return 1
-    [[ "$output" == *"GLOBS_AFTER=nd"* ]]
-}
-
 @test "clean_finder_metadata respects protection flag" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROTECT_FINDER_METADATA=true /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
@@ -2493,7 +2451,8 @@ EOF
     [ "$status" -eq 0 ] || return 1
     [[ "$output" == *"Safari cache"* ]] || return 1
     [[ "$output" == *"Firefox cache"* ]] || return 1
-    [[ "$output" == *"Puppeteer browser cache"* ]]
+    # Puppeteer installs its browsers here; removing them breaks launch (#1941).
+    [[ "$output" != *"Puppeteer"* ]]
 }
 
 @test "clean_browsers never enters Firefox cleanup while Firefox is running" {
@@ -2562,6 +2521,36 @@ EOF
     # Control: closed browsers still reach both rows.
     [[ "$closed" == *"SAFE_CLEAN:Chrome cache"* ]] || { echo "$output"; return 1; }
     [[ "$closed" == *"SAFE_CLEAN:Brave cache"* ]]
+}
+
+@test "clean_browsers defers a running browser's Caches root before sizing it" {
+    mkdir -p "$HOME/Library/Caches/Google/Chrome/Default/Cache" \
+        "$HOME/Library/Caches/BraveSoftware/Brave-Browser/Default/Cache" \
+        "$HOME/Library/Application Support/BraveSoftware/Brave-Browser"
+    touch "$HOME/Library/Caches/Google/Chrome/Default/Cache/data_0" \
+        "$HOME/Library/Caches/BraveSoftware/Brave-Browser/Default/Cache/data_0"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+safe_clean() { :; }
+# bin/clean.sh's guarded engine sizes every target before asking its guard.
+safe_clean_guarded() { echo "SIZED:${!#}"; return 75; }
+defer_cleanup_family() { echo "DEFER:$1"; }
+clean_service_worker_cache() { :; }
+note_activity() { :; }
+pgrep() { [[ "$2" == *"Google Chrome"* || "$2" == *"Brave Browser"* ]]; }
+clean_browsers
+EOF
+    rm -rf "$HOME/Library/Caches/Google" "$HOME/Library/Caches/BraveSoftware" \
+        "$HOME/Library/Application Support/BraveSoftware"
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" != *"SIZED:Chrome cache"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"SIZED:Brave cache"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"DEFER:Chrome"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"DEFER:Brave"* ]]
 }
 
 @test "clean_browsers fails closed when the Chrome process probe errors" {
@@ -3892,6 +3881,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
+_mole_mount_table() { echo "/dev/disk3s1s1 on / (apfs, local, journaled)"; }
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
 note_activity() { :; }
@@ -3918,6 +3908,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
+_mole_mount_table() { echo "/dev/disk3s1s1 on / (apfs, local, journaled)"; }
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
 note_activity() { :; }
@@ -3951,6 +3942,7 @@ EOF
         "Library/Mail|Mail data"
         "Library/Updates|macOS updates cache"
         ".lima|Lima data"
+        ".colima/_lima|Colima VM data"
         ".m2/repository|Maven local repository"
         ".ivy2/cache|Ivy local repository"
         ".nuget/packages|NuGet packages"
@@ -4145,7 +4137,7 @@ EOF
         "Library/Developer/Xcode/DerivedData" "Library/Developer/Xcode/Archives"
         "Library/Developer/CoreSimulator/Devices" "Library/Containers/com.docker.docker/Data"
         "Library/Application Support/MobileSync/Backup" ".lmstudio/models"
-        "Library/Group Containers/HUAQ24HBR6.dev.orbstack/data" "OrbStack" ".lima"
+        "Library/Group Containers/HUAQ24HBR6.dev.orbstack/data" "OrbStack" ".lima" ".colima/_lima"
         ".m2/repository" ".ivy2/cache" ".nuget/packages" "Library/Caches/deno"
         "Library/pnpm/store"
         ".conda/pkgs" "anaconda3/pkgs" ".gradle/caches" ".android/avd"
@@ -5025,4 +5017,117 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *"SPIN:Measuring Trash..."*"Trash · would empty, 1 item"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"SPINNING_AFTER=false"* ]] || { echo "$output"; return 1; }
+}
+
+@test "browser and external volume root overrides are honored only in test mode" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        MOLE_CHROME_APP_PATHS="$HOME/override/Chrome.app" \
+        MOLE_EDGE_APP_PATHS="$HOME/override/Edge.app" \
+        MOLE_BRAVE_APP_PATHS="$HOME/override/Brave.app" \
+        MOLE_EXTERNAL_VOLUMES_ROOT="$HOME/override/volumes" \
+        /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+# The wrappers only choose the bundle list; record it instead of cleaning.
+_clean_chromium_old_versions() { shift 3; printf 'PATHS:%s\n' "$*"; }
+for mode in 0 1; do
+    echo "MODE:$mode"
+    MOLE_TEST_MODE=$mode MOLE_TEST_NO_AUTH=0 clean_chrome_old_versions
+    MOLE_TEST_MODE=$mode MOLE_TEST_NO_AUTH=0 clean_edge_old_versions
+    MOLE_TEST_MODE=$mode MOLE_TEST_NO_AUTH=0 clean_brave_old_versions
+    printf 'VOLUMES:%s\n' "$(MOLE_TEST_MODE=$mode MOLE_TEST_NO_AUTH=0 external_volume_root)"
+done
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local real_part="${output%%MODE:1*}"
+    local test_part="${output#*MODE:1}"
+    [[ "$real_part" != *"$HOME/override"* ]] || { echo "override used outside test mode: $output"; return 1; }
+    [[ "$real_part" == *"PATHS:/Applications/Google Chrome.app $HOME/Applications/Google Chrome.app"* ]] || return 1
+    [[ "$real_part" == *"VOLUMES:/Volumes"* ]] || return 1
+    [[ "$test_part" == *"PATHS:$HOME/override/Chrome.app"* ]] || return 1
+    [[ "$test_part" == *"PATHS:$HOME/override/Edge.app"* ]] || return 1
+    [[ "$test_part" == *"PATHS:$HOME/override/Brave.app"* ]] || return 1
+    [[ "$test_part" == *"VOLUMES:$HOME/override/volumes"* ]]
+}
+
+@test "clean_handoff_pasteboard_cache continues on non-signal size failure and stops on signal" {
+    local size_rc mode case_home pb want_timeouts want_known first_target second_target
+    for size_rc in 1 124 130; do
+        for mode in dry real; do
+            case_home="$BATS_TEST_TMPDIR/pb-size-$size_rc-$mode"
+            pb="$case_home/Library/Group Containers/group.com.apple.coreservices.useractivityd/shared-pasteboard"
+            mkdir -p "$pb/stale-a" "$pb/stale-b"
+            echo "payload" > "$pb/stale-a/data"
+            echo "payload" > "$pb/stale-b/data"
+            touch -t 202001010000 "$pb/stale-a" "$pb/stale-b"
+
+            run env HOME="$case_home" PROJECT_ROOT="$PROJECT_ROOT" SIZE_RC="$size_rc" MODE="$mode" \
+                MOLE_CURRENT_COMMAND=clean MOLE_CLEAN_CANCEL_STATUS=0 MOLE_CLEAN_SIZING_TIMEOUTS=0 \
+                /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+if [[ "$MODE" == "dry" ]]; then
+    DRY_RUN=true
+else
+    DRY_RUN=false
+fi
+note_activity() { :; }
+is_path_whitelisted() { return 1; }
+get_path_size_kb() {
+    local first=""
+    if [[ ! -e "$HOME/first-target" ]]; then
+        printf '%s\n' "$1" > "$HOME/first-target"
+    fi
+    IFS= read -r first < "$HOME/first-target" || true
+    if [[ "$1" == "$first" ]]; then
+        return "$SIZE_RC"
+    fi
+    echo 4
+}
+record_dry_run_cleanup_target() {
+    printf '%s|%s\n' "$1" "$4" >> "$HOME/preview"
+}
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+rc=0
+clean_handoff_pasteboard_cache || rc=$?
+printf 'RC=%s CANCEL=%s TIMEOUTS=%s CLEANED=%s\n' "$rc" "${MOLE_CLEAN_CANCEL_STATUS:-0}" "${MOLE_CLEAN_SIZING_TIMEOUTS:-0}" "$files_cleaned"
+EOF
+
+            [ "$status" -eq 0 ] || { echo "$size_rc/$mode: $output"; return 1; }
+            if [[ "$size_rc" -eq 130 ]]; then
+                [[ "$output" == *"RC=130 CANCEL=130"* ]] || { echo "$output"; return 1; }
+                [[ "$output" == *"CLEANED=0"* ]] || { echo "$output"; return 1; }
+                [ ! -e "$case_home/preview" ] || return 1
+                [ -e "$pb/stale-a" ] || return 1
+                [ -e "$pb/stale-b" ] || return 1
+            else
+                want_timeouts=0
+                want_known=true
+                if [[ "$size_rc" -eq 124 ]]; then
+                    want_timeouts=1
+                    want_known=false
+                fi
+                [[ "$output" == *"RC=0 CANCEL=0 TIMEOUTS=$want_timeouts"* ]] || { echo "$output"; return 1; }
+                [[ "$output" == *"CLEANED=2"* ]] || { echo "$output"; return 1; }
+                [ -f "$case_home/first-target" ] || return 1
+                IFS= read -r first_target < "$case_home/first-target" || true
+                second_target="$pb/stale-b"
+                if [[ "$first_target" == "$pb/stale-b" ]]; then
+                    second_target="$pb/stale-a"
+                fi
+                if [[ "$mode" == "dry" ]]; then
+                    grep -Fxq "$first_target|$want_known" "$case_home/preview" || return 1
+                    grep -Fxq "$second_target|true" "$case_home/preview" || return 1
+                else
+                    [ ! -e "$pb/stale-a" ] || return 1
+                    [ ! -e "$pb/stale-b" ] || return 1
+                fi
+            fi
+        done
+    done
 }

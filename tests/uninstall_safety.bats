@@ -606,8 +606,9 @@ EOF
 }
 
 @test "uninstall keeps cache-resident user data out of automatic removal" {
-	# Raycast keeps clipboard-history images and Mullvad Browser its profile
-	# root under ~/Library/Caches; both become opt-in rows like Spotify.
+	# Raycast keeps clipboard-history images, Mullvad Browser its profile root
+	# and Buzz its Whisper models, plugins and user CSS under ~/Library/Caches;
+	# all become opt-in rows like Spotify.
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/uninstall/review.sh"
@@ -615,11 +616,14 @@ for kept in \
     "$HOME/Library/Caches/com.raycast.macos" \
     "$HOME/Library/Caches/com.raycast.macos/Clipboard" \
     "$HOME/Library/Caches/MullvadBrowser" \
+    "$HOME/Library/Caches/Buzz" \
+    "$HOME/Library/Caches/Buzz/models" \
     "$HOME/Library/Caches/com.spotify.client"; do
     if _uninstall_disposable_leftover "$kept"; then echo "automatic: $kept"; exit 1; fi
 done
 _uninstall_disposable_leftover "$HOME/Library/Caches/com.example.app" || exit 1
 _uninstall_disposable_leftover "$HOME/Library/Caches/com.raycast.macosx" || exit 1
+_uninstall_disposable_leftover "$HOME/Library/Caches/Buzzword" || exit 1
 EOF
 	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
@@ -1286,7 +1290,7 @@ EOF
 }
 
 @test "a new owner after the app move preserves defaults helpers and full container bytes" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 MOLE_UNINSTALL_MODE=1 MOLE_DELETE_MODE=trash /bin/bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" MOLE_HAS_FDA=1 PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 MOLE_UNINSTALL_MODE=1 MOLE_DELETE_MODE=trash /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/uninstall/batch.sh"
 run_with_timeout() { shift; "$@"; }
@@ -1355,13 +1359,17 @@ remove_login_item() { :; }
 force_kill_app() { :; }
 stop_inline_spinner() { :; }
 bootout_login_item_helpers() { :; }
-for outcome in denied emptied; do
+for run in denied:1 emptied:1 denied:0 emptied:0; do
+    outcome="${run%:*}"
+    export MOLE_HAS_FDA="${run#*:}"
     rm -rf "$data" "$HOME/removed-fixture.app"
     mkdir -p "$selected/Contents" "$data/Data/Library/Application Support/SodaMusic/LunaCacheV2"
     printf '%s\n' '<plist><dict><key>CFBundleIdentifier</key><string>com.soda.music</string></dict></plist>' > "$selected/Contents/Info.plist"
     printf 'container metadata\n' > "$data/.com.apple.containermanagerd.metadata.plist"
     head -c 65536 /dev/zero > "$data/Data/Library/Application Support/SodaMusic/LunaCacheV2/track"
     container_kb=$(du -skP "$data" | awk '{print $1}')
+    # Without the grant the plan never measured the container.
+    [[ "$MOLE_HAS_FDA" == 1 ]] || container_kb=0
     encoded=$(printf '%s' "$data" | base64 | tr -d '\n')
     fields=(Soda "$selected" com.soda.music "$((1000 + container_kb))" "$encoded" '' false false false '' '' '' '' none x com.soda.music '' x)
     IFS='|' detail="${fields[*]}"; unset IFS
@@ -1675,6 +1683,54 @@ EOF2
     [[ "$output" != *".foo-update"* ]] || { echo "$output"; return 1; }
 }
 
+@test "an old app copy in Foundation's item-replacement folder is not listed in any locale" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc <<'EOF2'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/uninstall.sh"
+root="$HOME/Applications"
+# Spanish written decomposed, as a directory listing returns it.
+es=$(printf '(%s está guardando un documento…)' Sparkle | /usr/bin/iconv -f UTF-8 -t UTF-8-MAC)
+mkdir -p "$root/WhatsApp.app/Contents" \
+    "$root/(A Document Being Saved By Sparkle)/WhatsApp.app/Contents" \
+    "$root/(A Document Being Saved By Sparkle 2)/Old.app/Contents" \
+    "$root/（Sparkle正在保存文稿）/Old.app/Contents" \
+    "$root/$es/Old.app/Contents" \
+    "$root/(Not Being Saved)/Kept.app/Contents" "$root/（不是）/Kept.app/Contents"
+# The decomposed name reached the disk as written (U+0301 is CC 81).
+ls "$root" | LC_ALL=C grep -q $'\xcc\x81' || { echo "no decomposed name on disk"; exit 1; }
+uninstall_print_app_paths_with_mtime "$root" | awk -F '\t' '{ print "LISTED=" $NF }' | sed "s#$HOME#~#"
+uninstall_print_app_search_dirs() { printf '%s\n' "$root"; }
+pkg_receipt_nonstandard_app_paths() { :; }
+uninstall_app_inventory_fingerprint | awk -F '|' '{ print "INVENTORY=" $1 }' | sed "s#$HOME#~#"
+EOF2
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local kind
+    for kind in LISTED INVENTORY; do
+        [[ "$output" == *"$kind=~/Applications/WhatsApp.app"* ]] || { echo "$output"; return 1; }
+        [[ "$output" == *"$kind=~/Applications/(Not Being Saved)/Kept.app"* ]] || { echo "$output"; return 1; }
+        [[ "$output" == *"$kind=~/Applications/（不是）/Kept.app"* ]] || { echo "$output"; return 1; }
+    done
+    [[ "$output" != *"Being Saved By"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"正在保存文稿"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"guardando"* ]] || { echo "$output"; return 1; }
+}
+
+@test "item-replacement folder names come from the system's Document.loctable" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc <<'EOF2'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/uninstall.sh"
+uninstall_load_item_replacement_globs
+printf '%s\n' "$_MOLE_ITEM_REPLACEMENT_GLOBS" | grep -c . | sed 's/^/COUNT=/'
+printf '%s\n' "$_MOLE_ITEM_REPLACEMENT_GLOBS" | grep -c '%' | sed 's/^/UNCONVERTED=/' || true
+EOF2
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local count="${output#*COUNT=}"
+    count="${count%%$'\n'*}"
+    # 148 templates from 43 locales on macOS 27; fewer means the read broke.
+    [[ "$count" =~ ^[0-9]+$ ]] && ((count >= 80)) || { echo "$output"; return 1; }
+    [[ "$output" == *"UNCONVERTED=0"* ]] || { echo "$output"; return 1; }
+}
+
 @test "an updater staging copy does not count as a surviving sibling but a hidden app does" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc <<'EOF2'
 set -uo pipefail
@@ -1864,4 +1920,104 @@ mole_uninstall_jetbrains_selector() {
 if uninstall_bundles_share_remnants COM.JETBRAINS.custom COM.JETBRAINS.other '/Applications/Custom IDE.app' '/Applications/Other IDE.app'; then exit 1; fi
 SH
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "a whole uninstall never runs du on another app's container without Full Disk Access" {
+	for grant in 0 1; do
+		local fixture_home="$HOME/container-du-$grant"
+		mkdir -p "$fixture_home/Applications/TestApp.app/Contents" \
+			"$fixture_home/Library/Containers/com.example.TestApp/Data" \
+			"$fixture_home/Library/Group Containers/group.com.example.TestApp/Data" \
+			"$fixture_home/Library/Caches/com.example.TestApp" \
+			"$fixture_home/du-stub"
+		cat > "$fixture_home/Applications/TestApp.app/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.example.TestApp</string></dict></plist>
+PLIST
+		cat > "$fixture_home/du-stub/du" <<STUB
+#!/bin/bash
+printf '%s\n' "\$*" >> "$fixture_home/du.log"
+printf '8\ttotal\n'
+STUB
+		chmod +x "$fixture_home/du-stub/du"
+		: > "$fixture_home/du.log"
+
+		run env HOME="$fixture_home" PROJECT_ROOT="$PROJECT_ROOT" GRANT="$grant" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+source "$PROJECT_ROOT/tests/helpers/uninstall.bash"
+mole_test_isolate_uninstall_inventory
+PATH="$HOME/du-stub:$PATH"
+export MOLE_HAS_FDA="$GRANT"
+brew() { :; }
+app_bundle="$HOME/Applications/TestApp.app"
+# Every leftover survives its removal, so the post-removal measurement runs.
+mole_delete() {
+	[[ "$1" != "$app_bundle" ]] || mv "$app_bundle" "$HOME/removed-app-fixture"
+	return 0
+}
+remove_file_list() { printf '0\n'; return 0; }
+request_sudo_access() { return 0; }
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+enter_alt_screen() { :; }
+leave_alt_screen() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+remove_apps_from_dock() { :; }
+pgrep() { return 1; }
+pkill() { return 0; }
+sudo() { return 0; }
+selected_apps=("0|$app_bundle|TestApp|com.example.TestApp|0|Never")
+files_cleaned=0
+total_items=0
+total_size_cleaned=0
+drain_pending_input() { :; }
+# The container is personal data, so the review has to select it.
+paginated_multi_select() { MOLE_SELECTION_RESULT="0,1"; }
+printf 'd\n' | MOLE_TEST_MODE=1 batch_uninstall_applications
+EOF
+		[ "$status" -eq 0 ] || { printf 'grant %s exit %s\n%s\n' "$grant" "$status" "$output"; return 1; }
+		grep -qF "Library/Caches/com.example.TestApp" "$fixture_home/du.log" || {
+			cat "$fixture_home/du.log"
+			return 1
+		}
+		if [[ "$grant" == 0 ]]; then
+			if grep -F "Library/Containers" "$fixture_home/du.log"; then return 1; fi
+		else
+			grep -qF "Library/Containers/com.example.TestApp" "$fixture_home/du.log" || {
+				cat "$fixture_home/du.log"
+				return 1
+			}
+		fi
+	done
+}
+
+@test "a PlayCover app inside its container is not measured without Full Disk Access" {
+	local app="$HOME/Library/Containers/io.playcover.PlayCover/Applications/com.example.game.app"
+	mkdir -p "$app/Contents" "$HOME/playcover-du"
+	cat > "$HOME/playcover-du/du" <<STUB
+#!/bin/bash
+printf '%s\n' "\$*" >> "$HOME/playcover-du.log"
+printf '8\t%s\n' "\${@: -1}"
+STUB
+	chmod +x "$HOME/playcover-du/du"
+	: > "$HOME/playcover-du.log"
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" APP="$app" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+PATH="$HOME/playcover-du:$PATH"
+mdls() { return 1; }
+sed_src=$(/usr/bin/sed -n "/^uninstall_inline_du_size_kb() {/,/^}/p" "$PROJECT_ROOT/bin/uninstall.sh")
+eval "$sed_src"
+MOLE_UNINSTALL_INLINE_DU_SIZE_TIMEOUT_SEC=5
+export MOLE_HAS_FDA=0
+[[ "$(uninstall_inline_du_size_kb "$APP")" == 0 ]] || exit 1
+[[ ! -s "$HOME/playcover-du.log" ]] || exit 2
+export MOLE_HAS_FDA=1
+[[ "$(uninstall_inline_du_size_kb "$APP")" == 8 ]] || exit 3
+grep -qF "$APP" "$HOME/playcover-du.log" || exit 4
+EOF
+	[ "$status" -eq 0 ] || { printf 'exit %s\n%s\n' "$status" "$output"; return 1; }
 }

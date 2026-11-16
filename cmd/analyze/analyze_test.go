@@ -1685,6 +1685,47 @@ func TestSpotlightConsumerStopsWhenScanIsCanceled(t *testing.T) {
 	}
 }
 
+// mdfind prints one path per line. Every candidate must survive parsing,
+// not only the last one, which is the only line without a trailing newline.
+func TestSpotlightKeepsEveryOutputLine(t *testing.T) {
+	root := t.TempDir()
+	if isInFoldedDir(root) {
+		// Spotlight drops candidates under folded names such as "tmp", so
+		// nothing could be returned when TMPDIR sits below one.
+		t.Skipf("temp dir %s is below a folded directory", root)
+	}
+	var paths []string
+	for _, name := range []string{"a.bin", "b.bin", "c.bin"} {
+		path := filepath.Join(root, name)
+		if err := os.WriteFile(path, []byte(strings.Repeat("x", 4096)), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+		paths = append(paths, path)
+	}
+
+	originalRunner := spotlightQueryRunner
+	spotlightQueryRunner = func(_ context.Context, _, _ string) ([]byte, error) {
+		return []byte(strings.Join(paths, "\n") + "\n"), nil
+	}
+	t.Cleanup(func() {
+		spotlightQueryRunner = originalRunner
+	})
+
+	files, err := findLargeFilesWithSpotlight(context.Background(), root, 1)
+	if err != nil {
+		t.Fatalf("findLargeFilesWithSpotlight returned error: %v", err)
+	}
+	got := make(map[string]bool, len(files))
+	for _, file := range files {
+		got[file.Path] = true
+	}
+	for _, path := range paths {
+		if !got[path] {
+			t.Fatalf("Spotlight result is missing %s; got %+v", path, files)
+		}
+	}
+}
+
 func TestScanCmdTreatsWarmedCacheAsStale(t *testing.T) {
 	home := scanHome(t)
 	t.Setenv("HOME", home)
@@ -5117,5 +5158,203 @@ func TestCachedScanRejectsSupersededResult(t *testing.T) {
 				t.Fatal("cached result replaced the newer live scan")
 			}
 		})
+	}
+}
+
+// Siblings that share a long start must stay distinguishable on a narrow
+// terminal, so a row name keeps its tail rather than only its start.
+func TestNarrowRowsKeepTheTailOfLongSiblingNames(t *testing.T) {
+	names := []string{
+		"quarterly-financial-report-2023-final.xlsx",
+		"quarterly-financial-report-2024-final.xlsx",
+	}
+	m := model{
+		path:      filepath.Join(t.TempDir(), "docs"),
+		width:     70,
+		height:    30,
+		scanState: scanComplete,
+		totalSize: 2048,
+	}
+	for _, n := range names {
+		m.entries = append(m.entries, dirEntry{Name: n, Path: filepath.Join(m.path, n), Size: 1024, State: scanComplete})
+	}
+
+	view := ansi.Strip(m.View())
+	for _, n := range names {
+		tail := n[len(n)-14:]
+		if rowContaining(view, tail) == "" {
+			t.Fatalf("no row keeps the tail %q of %q in:\n%s", tail, n, view)
+		}
+	}
+}
+
+func TestCursorNavigationSkipsHiddenEdgesAndStopsOnUnavailableRows(t *testing.T) {
+	t.Run("overview trailing and leading hidden rows are skipped without losing cursor", func(t *testing.T) {
+		entries := []dirEntry{
+			{Name: "Home", Path: "/Users/test", Size: 4096, IsDir: true, State: scanComplete},
+			{Name: "uv Cache", Path: "/Users/test/.cache/uv", Size: 0, IsDir: true, State: scanComplete},
+			{Name: "pip Cache", Path: "/Users/test/.cache/pip", Size: 0, IsDir: true, State: scanComplete},
+		}
+		m := model{
+			path:       "/",
+			isOverview: true,
+			width:      80,
+			height:     24,
+			entries:    entries,
+			totalSize:  4096,
+			scanState:  scanComplete,
+		}
+
+		updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyDown})
+		m = updated.(model)
+		if m.selected != 0 {
+			t.Fatalf("down at last visible row moved selection to %d, want 0", m.selected)
+		}
+		if !strings.Contains(ansi.Strip(m.View()), "▶") {
+			t.Fatalf("cursor marker disappeared from overview:\n%s", ansi.Strip(m.View()))
+		}
+
+		leadingHidden := model{
+			path:       "/",
+			isOverview: true,
+			width:      80,
+			height:     24,
+			selected:   1,
+			entries: []dirEntry{
+				{Name: "uv Cache", Path: "/Users/test/.cache/uv", Size: 0, IsDir: true, State: scanComplete},
+				{Name: "Home", Path: "/Users/test", Size: 4096, IsDir: true, State: scanComplete},
+			},
+			totalSize: 4096,
+			scanState: scanComplete,
+		}
+		updated, _ = leadingHidden.updateKey(tea.KeyMsg{Type: tea.KeyUp})
+		got := updated.(model)
+		if got.selected != 1 {
+			t.Fatalf("up at first visible row moved selection to %d, want 1", got.selected)
+		}
+	})
+
+	t.Run("overview cursor does not freeze sort when only hidden rows lie ahead", func(t *testing.T) {
+		m := model{
+			path:                "/",
+			isOverview:          true,
+			width:               80,
+			height:              24,
+			liveSortMode:        liveSortFreezeOnMove,
+			autoSortLiveEntries: true,
+			entries: []dirEntry{
+				{Name: "Home", Path: "/Users/test", Size: 4096, IsDir: true, State: scanComplete},
+				{Name: "uv Cache", Path: "/Users/test/.cache/uv", Size: 0, IsDir: true, State: scanComplete},
+			},
+		}
+		updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyDown})
+		m = updated.(model)
+		if m.selected != 0 || !m.autoSortLiveEntries {
+			t.Fatalf("got selected=%d autoSort=%t, want selected=0 autoSort=true", m.selected, m.autoSortLiveEntries)
+		}
+	})
+
+	t.Run("directory listing cursor reaches every rendered row, zero-byte ones included", func(t *testing.T) {
+		m := model{
+			path:   "/fixture",
+			width:  80,
+			height: 24,
+			entries: []dirEntry{
+				{Name: "active", Path: "/fixture/active", Size: 4096, IsDir: true, State: scanComplete},
+				{Name: "empty.log", Path: "/fixture/empty.log", Size: 0, State: scanComplete},
+				{Name: "notes", Path: "/fixture/notes", Size: 0, IsDir: true, State: scanComplete},
+			},
+		}
+		for want := 1; want <= 2; want++ {
+			updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyDown})
+			m = updated.(model)
+			if m.selected != want {
+				t.Fatalf("down landed on %d, want %d", m.selected, want)
+			}
+		}
+		if !strings.Contains(ansi.Strip(m.View()), "▶") {
+			t.Fatalf("cursor marker disappeared from the listing:\n%s", ansi.Strip(m.View()))
+		}
+		updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyUp})
+		if got := updated.(model).selected; got != 1 {
+			t.Fatalf("up landed on %d, want 1", got)
+		}
+	})
+
+	t.Run("scanUnavailable rows remain reachable by keyboard", func(t *testing.T) {
+		m := model{
+			path:   "/fixture",
+			width:  80,
+			height: 24,
+			entries: []dirEntry{
+				{Name: "top", Path: "/fixture/top", Size: 4096, IsDir: true, State: scanComplete},
+				{Name: "locked", Path: "/fixture/locked", Size: 0, IsDir: true, State: scanUnavailable},
+				{Name: "bottom", Path: "/fixture/bottom", Size: 1024, IsDir: true, State: scanComplete},
+			},
+		}
+
+		updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyDown})
+		m = updated.(model)
+		if m.selected != 1 {
+			t.Fatalf("down from top landed on %d, want 1 (scanUnavailable)", m.selected)
+		}
+		updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyDown})
+		m = updated.(model)
+		if m.selected != 2 {
+			t.Fatalf("down from unavailable landed on %d, want 2", m.selected)
+		}
+		updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyUp})
+		m = updated.(model)
+		if m.selected != 1 {
+			t.Fatalf("up from bottom landed on %d, want 1 (scanUnavailable)", m.selected)
+		}
+	})
+}
+
+func TestOverviewSelectionAvoidsHiddenRowsAndEnterIgnoresThem(t *testing.T) {
+	pub0 := newScanPublication(context.Background(), func() {})
+	pub1 := newScanPublication(context.Background(), func() {})
+	uvPath := "/Users/test/.cache/uv"
+	homePath := "/Users/test"
+
+	m := model{
+		path:       "/",
+		isOverview: true,
+		width:      80,
+		height:     24,
+		entries: []dirEntry{
+			{Name: "uv Cache", Path: uvPath, Size: -1, IsDir: true},
+			{Name: "Home", Path: homePath, Size: -1, IsDir: true},
+		},
+		overviewScanningSet: map[string]*scanPublication{
+			uvPath:   pub0,
+			homePath: pub1,
+		},
+	}
+
+	updated, _ := m.Update(overviewSizeMsg{
+		publication: pub0,
+		Path:        uvPath,
+		Index:       0,
+		Size:        0,
+	})
+	m = updated.(model)
+	if m.selected != 1 {
+		t.Fatalf("overview selection remained on hidden row 0, got %d, want 1", m.selected)
+	}
+
+	allHidden := model{
+		path:       "/",
+		isOverview: true,
+		width:      80,
+		height:     24,
+		entries: []dirEntry{
+			{Name: "uv Cache", Path: uvPath, Size: 0, IsDir: true, State: scanComplete},
+		},
+	}
+	entered, cmd := allHidden.updateKey(tea.KeyMsg{Type: tea.KeyEnter})
+	got := entered.(model)
+	if cmd != nil || !got.inOverviewMode() || got.path != "/" {
+		t.Fatalf("enter opened hidden overview row: cmd=%t overview=%t path=%s", cmd != nil, got.inOverviewMode(), got.path)
 	}
 }

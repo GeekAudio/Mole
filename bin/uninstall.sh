@@ -106,6 +106,11 @@ uninstall_inline_du_size_kb() {
         echo "0"
         return 0
     }
+    # A PlayCover app lives inside PlayCover's container.
+    if mole_sizing_would_ask_for_app_data "$app_path"; then
+        echo "0"
+        return 0
+    fi
 
     local du_size_kb
     du_size_kb=$(run_with_timeout "$MOLE_UNINSTALL_INLINE_DU_SIZE_TIMEOUT_SEC" du -skP "$app_path" 2> /dev/null | awk '{print $1; exit}') || du_size_kb=""
@@ -425,8 +430,10 @@ start_uninstall_metadata_refresh() {
                     last_used_epoch=0
                 fi
 
-                local size_kb
-                size_kb=$(get_path_size_kb "$app_path")
+                local size_kb=0
+                if ! mole_sizing_would_ask_for_app_data "$app_path"; then
+                    size_kb=$(get_path_size_kb "$app_path")
+                fi
                 [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
 
                 printf "%s|%s|%s|%s|%s|%s|%s|%s\n" "$app_path" "${app_mtime:-0}" "$size_kb" "${last_used_epoch:-0}" "$now_epoch" "$bundle_id" "$display_name" "$language_signature" > "$worker_output"
@@ -680,16 +687,75 @@ uninstall_resolve_eligible_bundle_id() {
     printf '%s\n' "$bundle_id"
 }
 
+# Foundation's item-replacement folder, "(A Document Being Saved By Sparkle)"
+# in the system language, holds the old copy an interrupted app swap left beside
+# the new one; it is not an install. Its names come from four Document.loctable
+# keys in every locale, read from the system once per shell (about 7 ms) and
+# turned into extglob patterns: a placeholder matches the app name or a number,
+# every other character literally. Unreadable: no patterns, nothing extra skipped.
+_MOLE_ITEM_REPLACEMENT_GLOBS=""
+_MOLE_ITEM_REPLACEMENT_GLOBS_LOADED=false
+uninstall_load_item_replacement_globs() {
+    [[ "${_MOLE_ITEM_REPLACEMENT_GLOBS_LOADED:-}" == true ]] && return 0
+    _MOLE_ITEM_REPLACEMENT_GLOBS_LOADED=true
+    # LC_ALL=C: macOS awk aborts on some of these strings in a UTF-8 locale, and
+    # every byte the conversion acts on is ASCII.
+    _MOLE_ITEM_REPLACEMENT_GLOBS=$(/usr/bin/plutil -convert xml1 -o - \
+        /System/Library/Frameworks/Foundation.framework/Resources/Document.loctable 2> /dev/null |
+        LC_ALL=C /usr/bin/awk '
+            function glob(t,   out, c) {
+                out = ""
+                while (length(t) > 0) {
+                    if (match(t, /^%([0-9]+\$)?(\[tt\])?@/)) { out = out "?*"; t = substr(t, RLENGTH + 1); continue }
+                    if (match(t, /^%([0-9]+\$)?ld/)) { out = out "+([0-9])"; t = substr(t, RLENGTH + 1); continue }
+                    c = substr(t, 1, 1); t = substr(t, 2)
+                    if (index("\\*?[]()|+@!", c)) out = out "\\"
+                    out = out c
+                }
+                return out
+            }
+            $0 ~ /^[[:space:]]*<key>\(A Document Being Saved( By %@)?( %ld)?\)<\/key>[[:space:]]*$/ { want = 1; next }
+            want && /^[[:space:]]*<string>.*<\/string>[[:space:]]*$/ {
+                s = $0; sub(/^[[:space:]]*<string>/, "", s); sub(/<\/string>[[:space:]]*$/, "", s)
+                gsub(/&lt;/, "<", s); gsub(/&gt;/, ">", s); gsub(/&amp;/, "\\&", s)
+                if (!(s in seen)) { seen[s] = 1; print glob(s) }
+            }
+            { want = 0 }
+        ') || _MOLE_ITEM_REPLACEMENT_GLOBS=""
+    return 0
+}
+
 uninstall_print_app_paths_with_mtime() {
     local app_dir="$1"
     local include_info_mtime="${2:-false}"
 
     [[ -d "$app_dir" ]] || return 0
 
+    uninstall_load_item_replacement_globs
+    # Every template starts with "(" or a full-width "（", neither of which
+    # decomposes, so only such folders pay for a composing match. A directory
+    # listing returns names decomposed and the templates are composed, so the
+    # name is composed to NFC (/usr/bin/iconv; GNU iconv has no UTF-8-MAC).
+    local -a replacement_prune=()
+    if [[ -n "${_MOLE_ITEM_REPLACEMENT_GLOBS:-}" ]]; then
+        # shellcheck disable=SC2016 # The child shell expands its own variables.
+        replacement_prune=(\( -type d \( -name '(*' -o -name '（*' \) ! -iname '*.app' -exec /bin/bash -c '
+            name=${1##*/}
+            composed=$(printf "%s" "$name" | /usr/bin/iconv -f UTF-8-MAC -t UTF-8 2>/dev/null) || composed=""
+            [[ -n "$composed" ]] || composed=$name
+            shopt -s extglob
+            while IFS= read -r glob; do
+                [[ -n "$glob" && "$composed" == $glob ]] && exit 0
+            done <<< "$2"
+            exit 1
+        ' _ {} "$_MOLE_ITEM_REPLACEMENT_GLOBS" \; -prune \) -o)
+    fi
+
     # shellcheck disable=SC2016 # The child shell expands the batch arguments.
     # A hidden folder holds updater staging copies (/Applications/.x-update/app/X.app),
     # not installs; a hidden .app itself is still listed.
-    command find "$app_dir" -mindepth 1 -maxdepth 3 \( -type d -name '.*' ! -iname '*.app' -prune \) -o -iname "*.app" -exec /bin/bash -c '
+    command find "$app_dir" -mindepth 1 -maxdepth 3 \( -type d -name '.*' ! -iname '*.app' -prune \) -o \
+        "${replacement_prune[@]+"${replacement_prune[@]}"}" -iname "*.app" -exec /bin/bash -c '
         stat_cmd="$1"
         include_info="$2"
         shift 2
@@ -753,6 +819,8 @@ uninstall_app_inventory_fingerprint() {
     fi
     local app_dir app_path app_mtime info_mtime pkg_app_path
 
+    # Load once here: the group below and each walk in it run in subshells.
+    uninstall_load_item_replacement_globs
     {
         while IFS= read -r pkg_app_path; do
             [[ -n "$pkg_app_path" && -d "$pkg_app_path" ]] || continue
@@ -880,6 +948,8 @@ _scan_discover_apps() {
         printf "%s|%s|%s\n" "$pkg_app_path" "$app_name" "${app_mtime:-0}" >> "$discovered_file"
     done < <(pkg_receipt_nonstandard_app_paths)
 
+    # Load once here: each walk below runs in a subshell.
+    uninstall_load_item_replacement_globs
     for app_dir in "${app_dirs[@]}"; do
         if [[ ! -d "$app_dir" ]]; then continue; fi
 

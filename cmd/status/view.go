@@ -514,17 +514,13 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 			lines = append(lines, fmt.Sprintf("剩余  %s", humanBytes(mem.Available)))
 		}
 	}
-	// Memory pressure status.
-	if mem.Pressure != "" {
-		pressureStyle := okStyle
-		pressureText := "压力 " + memoryPressureLabel(mem.Pressure)
-		switch mem.Pressure {
-		case "warn":
-			pressureStyle = warnStyle
-		case "critical":
-			pressureStyle = dangerStyle
-		}
-		lines = append(lines, pressureStyle.Render(pressureText))
+	// Memory pressure status, only when it asks for attention: normal is the
+	// usual state and a line that always reads normal is noise.
+	switch mem.Pressure {
+	case "warn":
+		lines = append(lines, warnStyle.Render("压力 "+memoryPressureLabel(mem.Pressure)))
+	case "critical":
+		lines = append(lines, dangerStyle.Render("压力 "+memoryPressureLabel(mem.Pressure)))
 	}
 	return cardData{icon: iconMemory, title: "内存", lines: lines}
 }
@@ -1122,15 +1118,18 @@ func colorizeTemp(t float64) string {
 	}
 }
 
+// formatRate picks the precision from the rounded value, so a rate just under
+// a boundary (0.996, 9.97) prints as "1.0 MB/s" or "10 MB/s" instead of
+// "1.00 MB/s" or "10.0 MB/s".
 func formatRate(mb float64) string {
 	if mb < 0.01 {
 		return "0 MB/s"
 	}
-	if mb < 1 {
-		return fmt.Sprintf("%.2f MB/s", mb)
+	if s := fmt.Sprintf("%.2f", mb); mb < 1 && s != "1.00" {
+		return s + " MB/s"
 	}
-	if mb < 10 {
-		return fmt.Sprintf("%.1f MB/s", mb)
+	if s := fmt.Sprintf("%.1f", mb); mb < 10 && s != "10.0" {
+		return s + " MB/s"
 	}
 	return fmt.Sprintf("%.0f MB/s", mb)
 }
@@ -1139,8 +1138,8 @@ func formatRateCompact(mb float64) string {
 	if mb < 0.01 {
 		return "0"
 	}
-	if mb < 10 {
-		return fmt.Sprintf("%.1f", mb)
+	if s := fmt.Sprintf("%.1f", mb); mb < 10 && s != "10.0" {
+		return s
 	}
 	return fmt.Sprintf("%.0f", mb)
 }

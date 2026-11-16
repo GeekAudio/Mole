@@ -1,6 +1,52 @@
 # Weekly Audit Log
 
-One entry per run of `.claude/skills/weekly-audit`, newest first, covering Mole CLI (macOS) on `main` and Mole CLI (Windows) on `windows`. The next run reads the newest entry for its commit window (`Next window from`), for the items it must not report again (`Decided, do not re-report`), and rechecks `Open` first. Facts here are a run record; lasting invariants live in `AGENTS.md` on each branch.
+One entry per run of `.claude/skills/weekly-audit`, newest first, covering Mole CLI (macOS) on `main`, Mole CLI (Windows) on `windows` and, since 2026-11-10, Mole CLI (Linux) on `linux`. The next run reads the newest entry for its commit window (`Next window from`), for the items it must not report again (`Decided, do not re-report`), and rechecks `Open` first. Facts here are a run record; lasting invariants live in `AGENTS.md` on each branch.
+
+## 2026-11-10 Three-CLI whole review
+
+- Frozen sources: main `1baecd15`, windows `075215a8`, linux `cf42a724` (first audit of Mole CLI (Linux)). Scope: all three trees whole, at the maintainer's request, in six read-only passes: macOS deletion safety, Windows and Linux deletion safety, command and flag matrix, performance (measured on macOS, by reading elsewhere), over-design and design, stale guidance and codification.
+- Landed: main `2ed8427b`, `5cbe27b7`, `0afbb83c`, `59c274a4`, `543a6574`, `dfd0e583`; linux `210e3932`, `c80d3da5`, `e1593dff`, `954da7d7`, `15e995aa`; windows `06b07a9d`, `75ce2f7a`, `cd60e200`, `16c78ee7`, `bec984bb`, `147eef15`, `46c53900`. The per-change table is in SYNC.md under 2026-11-10.
+- Released the same day: `V1.71.0` from `49a861b8` and `V0.6.0-linux` from `f8161dd4`. Before tagging, the macOS candidate passed the full suite, the release builds with go1.26.10 at macOS 12.0 and `scripts/e2e_macos.py` 9 of 9 on the test Mac, and the Linux archive passed 49 end-to-end checks and the sudo gate with a real password on the devbox. `V1.44.0-windows` followed from `4b9c2647` after `scripts/e2e_windows.py` passed 9 of 9 on the ThinkPad and the VM; it was signed in the VM and a 1.43.0 source install updated to it. Winget and Scoop were not submitted.
+- Next window from: main `dfd0e583`, windows `bec984bb`, linux `15e995aa`.
+
+| Item | Disposition | Evidence |
+| --- | --- | --- |
+| Linux: Flatpak and Snap app caches skipped native narrowing (JetBrains LocalHistory, Lutris sign-in state) | Fixed | One table for listing and sink; red on the previous code; devbox 252 of 252 bats. |
+| Linux: sudo gate read a typed password as a skip and leaked the rest to the shell | Fixed | PTY test with a stand-in sudo; not run in a real session with a password. |
+| Linux: dangling whitelist link, `COREPACK_HOME` and `XDG_CACHE_HOME` making data folders rule roots, missing holdbacks, env path seams | Fixed | Red on the previous code. The second reviewer found the `COREPACK_HOME=~/Documents` case the first fix missed. |
+| macOS: seven cleanup-root test seams honored in real runs; validator skipped protection when the rules were not loaded | Fixed | I-64; full `./scripts/test.sh` and `check.sh --no-format` pass. |
+| macOS: uninstall removed Buzz models; `--with-data` preselected UTM and VirtualBuddy disks | Fixed | I-65, I-66; helper-level reproduction before, tests after. |
+| macOS: `mo history` and `mo status --json` cost | Fixed | 5 MB log 4.15s to 0.80s, output byte-identical on 80 files and 300 random logs; status 0.53s to 0.44s. |
+| All three: `truncateMiddle` one cell over budget on wide characters | Fixed | I-67; found during the Linux port. |
+| Linux: byte step-up, grapheme width, status resize guidance never ported | Fixed | `c80d3da5`. |
+| Windows: dry-run preview without a console, `analyse`, one owner check per preview, MSI scripts removed | Fixed | ThinkPad: nine new cases red on the previous source on both hosts; four changed test files 420 of 420 on both. |
+| Stale release lines (five on main, one on windows), eight issue-numbered fixes without incident rows | Fixed | Six rows added (I-58 to I-63); #1955 is a capability and #1889 a hint text, not defects. Windows #1948 was defensive, not user-met, so it gets no row. |
+| Lessons fixed repeatedly without a rule: display width, future-dated stamps, a helper flipping errexit | Codified | `go-tuis.md`, `shell.md`, `core.md`. |
+| Windows: `mo remove --dry-run` (maintainer: do it) | Fixed | `bec984bb`: a `-DryRun` switch on `Uninstall-Mole`; 17 new cases red on the previous source on both hosts, install-tier files 197 of 199 on both, the ThinkPad's user PATH byte-identical before and after. The second reviewer found the first "changes nothing" snapshots skipped every file. `scripts/e2e_windows.py` not run. |
+| Linux: three environment switches without a recorded reason (maintainer: remove) | Fixed | `954da7d7`. |
+| Linux: `mo history` appended every record to Bash arrays | Fixed | `15e995aa`: 5 MB log 1.8 s to 0.1 s on the devbox, output byte-identical. |
+| Windows AGENTS.md past the 20% trigger (maintainer: compress) | Fixed | `147eef15`: dedupe found 113 bytes, so 27 per-command Safety Rules bullets moved verbatim into five `.claude/rules` files; 41,451 to 27,480 bytes. The second reviewer found six loading gaps, all closed. |
+
+### Decided, do not re-report
+
+- Exit code 2 for an unknown command on Windows and the per-platform `mo history --json` keys are intentional differences.
+- `installer`, `slim`, `touchid` and `completion` stay off Windows and Linux; `clean --dry-run` gets no JSON output. No user asked for them.
+- `Test-MoleInteractiveOutput` false (redirected, a non-ConsoleHost host, `TERM=dumb`) is the meaning of "without a console" for the Windows dry-run preview.
+- The Windows `Get-MoleInstallNestedFiles` list keeps the two removed MSI script names, so `mo remove` still deletes them from older installs.
+- `clean --dry-run` at about 60s and `purge --dry-run` at about 26s on the audit Mac are `du` over 29 GB and the live `lsof` recheck the purge rule requires; not findings.
+
+### Open
+
+- Windows performance by reading only, no baseline measured, so not changed: `bin/uninstall.ps1` builds the registry and Appx inventory twice per selected app; `bin/purge.ps1` walks one artifact four to five times. Measure on a Windows host first.
+- Windows: a real `purge` or `uninstall` without a console ends on the raw `ReadKey` exception instead of a refusal that names the cause and the next command.
+- Windows: `Remove-FromUserPath` reads the user PATH expanded and writes it back when it removes the install folder, which on Windows PowerShell 5.1 probably turns `%VAR%` entries into literals (by reading, not run). It no longer writes when the folder is not in the PATH.
+- Windows: something in the complete suite leaves `Microsoft\Windows\PowerShell\ModuleAnalysisCache` in the test tree when run from a desktop session; the four changed test files do not.
+- Linux performance by reading only: `report_unknown_caches` repeats `du` over `~/.cache`, owner checks run `pgrep` per name and scan `/proc` per Snap rule, gopsutil runs `lsb_release` each status tick. A real Trash run still forks `date` and two subshells per entry in `log_operation`.
+- The published `mole` skill and `llms.txt` cover macOS and Windows only, and `skills/mole/references/windows.md` still describes the old dry-run workaround and has no `mo remove --dry-run`. Maintainer 2026-11-10: leave them until a user asks.
+- `MOLE_LSREGISTER_PATH` in `lib/core/base.sh` picks the binary `lsregister` calls run as the user and is read outside test mode; not a deletion root, left as is.
+- Delivery receipts are missing for V1.68.0 to V1.70.0, V1.41.0 to V1.43.0-windows and V0.5.0-linux; V1.71.0 and V0.6.0-linux have theirs above.
+
+Rule volume after this run: main AGENTS.md 36,446 bytes, AGENTS.md plus `.claude/rules` 178,785 bytes (18.8% over the 150,543 recorded on 2026-10-30); Windows AGENTS.md 27,480 bytes after the split, its five `.claude/rules` files 17,462 together (the new baseline; it was 41,451 before, 24% over 33,315); Linux AGENTS.md 21,963 bytes, with rules 34,135. On Windows two duplicate sentences were removed and one incident sentence moved; no constraint was removed on any branch.
 
 ## 2026-10-30 Dual CLI post-release review
 

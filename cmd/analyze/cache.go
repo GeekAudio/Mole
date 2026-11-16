@@ -34,7 +34,11 @@ import (
 // v8: APFS clones that share every block count once, so v7 totals can be inflated.
 // v9: mixed clone/hardlink groups deduplicate together; bounded lists use path ties.
 // v10: shortened directory listings must refresh before they are browsed.
-const cacheSchemaVersion = 10
+// v11: the overview leaves CloudStorage out of the User Library total.
+// v12: traversal stops at mount points, so v11 totals can include mounted volumes.
+// v13: the Home and old-Downloads overview totals stop at mount points too.
+// v14: Home totals deduplicate hardlinks across immediate children.
+const cacheSchemaVersion = 14
 
 type overviewSizeSnapshot struct {
 	Size          int64     `json:"size"`
@@ -69,7 +73,7 @@ func snapshotFromModel(m model) historyEntry {
 func filterNonEmptyEntries(entries []dirEntry) []dirEntry {
 	filtered := make([]dirEntry, 0, len(entries))
 	for _, entry := range entries {
-		if entry.Size > 0 || entry.State != scanComplete {
+		if !entry.hiddenWhenEmpty() {
 			filtered = append(filtered, entry)
 		}
 	}
@@ -676,11 +680,6 @@ func loadStaleCacheFromDisk(path string) (*cacheEntry, error) {
 	}
 
 	return entry, nil
-}
-
-func saveCacheToDisk(path string, result scanResult) error {
-	ctx := context.Background()
-	return saveCacheToDiskWithOptions(newScanPublication(ctx, nil), path, result, false)
 }
 
 func saveCacheToDiskWithOptions(publication *scanPublication, path string, result scanResult, needsRefresh bool) error {

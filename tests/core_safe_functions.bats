@@ -1529,6 +1529,8 @@ EOF
         should_protect_path '$HOME/Library/Caches/camoufox/Camoufox.app' || exit 1
         should_protect_path '$HOME/Library/Caches/Cypress' || exit 1
         should_protect_path '$HOME/Library/Caches/Cypress/13.6.0/Cypress.app' || exit 1
+        should_protect_path '$HOME/.cache/puppeteer' || exit 1
+        should_protect_path '$HOME/.cache/puppeteer/chrome-headless-shell/mac_arm-156.0.8078.47/chrome-headless-shell' || exit 1
         should_protect_path '$HOME/Library/Caches/com.apple.homed/state'
         should_protect_path '$HOME/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite'
         should_protect_path '$HOME/Library/Preferences/com.paceap.eden.iLokLicenseManager.plist'
@@ -1856,6 +1858,20 @@ EOF
     [ "$status" -eq 1 ]
 }
 
+@test "safe_find_delete refuses an age that is not plain whole days" {
+    local dir="$HOME/find-age-check"
+    mkdir -p "$dir"
+    touch -t 202001010000 "$dir/old.tmp"
+    local age
+    for age in 08 x 7d "a[0]" -1; do
+        run /bin/bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; safe_find_delete '$dir' '*.tmp' '$age' 'f' 2>&1"
+        [ "$status" -eq 1 ] || { echo "age=$age $output"; rm -rf "$dir"; return 1; }
+        [[ "$output" == *"Invalid age"* ]] || { echo "age=$age $output"; rm -rf "$dir"; return 1; }
+        [ -e "$dir/old.tmp" ] || { echo "age=$age removed the file"; rm -rf "$dir"; return 1; }
+    done
+    rm -rf "$dir"
+}
+
 @test "safe_find_delete preserves scan signals in real and dry-run cleanup" {
     local dry_run signal
     for dry_run in 0 1; do
@@ -1966,6 +1982,31 @@ SCRIPT
     [ ! -s "$target_dir/trace.txt" ] || return 1
     [ -f "$target_dir/file1.log" ] || return 1
     [ -f "$target_dir/file2.log" ] || return 1
+}
+
+@test "the V1.36.3 aged sweep of ~/.claude/projects keeps every transcript folder" {
+    local projects="$HOME/.claude/projects"
+    local control="$TEST_DIR/aged-control"
+    mkdir -p "$projects/-Users-me-app" "$projects/-Users-me-old" "$control/old-dir"
+    touch "$projects/-Users-me-app/0b6c9f0e-1111-4222-8333-944455556666.jsonl"
+    touch -t 202601010000 "$projects/-Users-me-old" "$projects/-Users-me-app" "$control/old-dir"
+
+    # The exact call V1.36.3 shipped in clean_dev_misc, beside a control
+    # folder of the same age that ordinary policy does remove.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECTS="$projects" CONTROL="$control" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+safe_find_delete "$PROJECTS" "*" 7 d || printf 'RC=%s\n' "$?"
+safe_find_delete "$CONTROL" "*" 7 d || printf 'RC=%s\n' "$?"
+# The same sweep one level up, aimed at an aged ~/.claude itself.
+touch -t 202601010000 "$HOME/.claude"
+safe_find_delete "$HOME" ".claude" 7 d || printf 'RC=%s\n' "$?"
+SCRIPT
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ ! -d "$control/old-dir" ] || { echo "control folder survived: $output"; return 1; }
+    [ -d "$projects/-Users-me-old" ] || return 1
+    [ -f "$projects/-Users-me-app/0b6c9f0e-1111-4222-8333-944455556666.jsonl" ]
 }
 
 @test "safe_sudo_find_delete dry run records targets once and tracks count (#1865)" {
@@ -2739,6 +2780,62 @@ SCRIPT
     [[ "$output" == *"COUNT=0"* ]] || return 1
     [[ "$output" == *"SURVIVED"* ]] || return 1
     [[ "$output" != *"REMOVED $target_file"* ]]
+}
+
+@test "safe_sudo_find_delete minute ages remove only files idle that long, at scan and recheck (#1994)" {
+    local target_dir="$TEST_DIR/sudo-minute-age-target"
+    local idle_file="$target_dir/CFNetworkDownload_idle.tmp"
+    local fresh_file="$target_dir/CFNetworkDownload_fresh.tmp"
+    mkdir -p "$target_dir"
+    touch "$idle_file" "$fresh_file"
+    touch -t "$(/bin/date -v-2H '+%Y%m%d%H%M.%S')" "$idle_file"
+    touch -t "$(/bin/date -v-10M '+%Y%m%d%H%M.%S')" "$fresh_file"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TARGET_DIR="$target_dir" \
+        MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+_mole_privileged_path_has_mutable_ancestor() { return 1; }
+sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
+    case "${1:-}" in
+        true) return 0 ;;
+        test)
+            shift
+            command test "$@"
+            ;;
+        find)
+            shift
+            command find "$@"
+            ;;
+        xargs)
+            shift
+            command xargs "$@"
+            ;;
+        *) "$@" ;;
+    esac
+}
+rc=0
+safe_sudo_find_delete "$TARGET_DIR" "CFNetworkDownload_*.tmp" "60m" "f" "1" || rc=$?
+printf 'RC=%s\nCOUNT=%s\n' "$rc" "${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-unset}"
+bad=0
+safe_sudo_find_delete "$TARGET_DIR" "CFNetworkDownload_*.tmp" "60x" "f" "1" 2> /dev/null || bad=$?
+printf 'BAD=%s\n' "$bad"
+for leading_zero in 08 08m; do
+    bad=0
+    safe_sudo_find_delete "$TARGET_DIR" "CFNetworkDownload_*.tmp" "$leading_zero" "f" "1" 2> /dev/null || bad=$?
+    printf 'BAD_%s=%s\n' "$leading_zero" "$bad"
+done
+SCRIPT
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"COUNT=1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"BAD=1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"BAD_08=1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"BAD_08m=1"* ]] || { echo "$output"; return 1; }
+    [[ ! -e "$idle_file" ]] || return 1
+    [[ -e "$fresh_file" ]]
 }
 
 @test "safe_sudo_find_delete keeps a path replaced after identity capture" {
@@ -3527,19 +3624,48 @@ SCRIPT
     [[ "$output" == *"DELETE:$target_file"*"SCAN_RC=0 RC=0"* ]]
 }
 
-@test "safe_find_delete works when app protection is not loaded" {
+@test "safe_find_delete keeps files when app protection is not loaded" {
     local old_file="$TEST_DIR/file-ops-only.tmp"
     touch "$old_file"
     touch -t "$(/bin/date -v-8d '+%Y%m%d%H%M.%S' 2>/dev/null || date -d '8 days ago' '+%Y%m%d%H%M.%S')" "$old_file" 2>/dev/null || true
 
+    # Without should_protect_path the validator cannot prove a path is not
+    # protected, so it refuses instead of skipping the check.
     run /bin/bash --noprofile --norc <<EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/file_ops.sh"
+safe_find_delete "$TEST_DIR" "*.tmp" 7 "f" || true
+EOF
+    [ -e "$old_file" ] || { echo "$output"; return 1; }
+
+    # Positive control: the same call removes the file once protection loads.
+    run /bin/bash --noprofile --norc <<EOF
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/file_ops.sh"
+source "$PROJECT_ROOT/lib/core/app_protection.sh"
 safe_find_delete "$TEST_DIR" "*.tmp" 7 "f"
 EOF
-
-    [ "$status" -eq 0 ]
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [ ! -e "$old_file" ]
+}
+
+@test "validate_path_for_deletion refuses every path when protection rules are not loaded" {
+    local target="$HOME/Library/Caches/com.example.unloaded/cache.db"
+    run env TARGET="$target" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/file_ops.sh"
+rc=0
+validate_path_for_deletion "$TARGET" || rc=$?
+printf 'RC=%s REASON=%s\n' "$rc" "$_MOLE_VALIDATION_REASON"
+source "$PROJECT_ROOT/lib/core/app_protection.sh"
+rc=0
+validate_path_for_deletion "$TARGET" || rc=$?
+printf 'LOADED_RC=%s\n' "$rc"
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=1 REASON=protected"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"protection rules not loaded"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"LOADED_RC=0"* ]]
 }
 
 @test "MOLE_* constants are defined" {

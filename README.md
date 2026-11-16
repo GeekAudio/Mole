@@ -32,6 +32,7 @@ mo analyze           # 浏览磁盘占用
 mo status            # 查看实时系统状态
 mo purge             # 清理项目构建产物
 mo installer         # 查找安装包
+mo slim              # 从通用二进制中移除 Intel 代码
 mo history           # 查看操作记录
 mo --help            # 查看帮助
 ```
@@ -42,7 +43,23 @@ mo --help            # 查看帮助
 mo clean --dry-run
 mo uninstall --dry-run
 mo purge --dry-run
+mo installer --dry-run
+mo slim --dry-run
 ```
+
+## 配合 AI 助手使用
+
+让助手直接读 `llms.txt` 安装，例如对它说：
+
+> 读 https://raw.githubusercontent.com/GeekAudio/Mole/main/llms.txt 帮我安装 Mole。
+
+也可以自己装技能包。装上后 Claude Code、Codex、Cursor 等助手在删除任何东西之前都会先跑 `--dry-run` 给你看清单，卸载应用和需要管理员权限的步骤留给你自己确认。更新用 `npx skills update -g -y`。
+
+```bash
+npx skills add tw93/Mole -a claude-code codex cursor -g -y
+```
+
+作为宿主插件使用：Claude Code 里 `/plugin marketplace add tw93/Mole` 后 `/plugin install mole@mole`；Codex 里 `codex plugin marketplace add tw93/Mole` 后 `codex plugin add mole@mole`。
 
 ## 安全说明
 

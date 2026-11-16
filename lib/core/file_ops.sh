@@ -1191,6 +1191,13 @@ validate_path_for_deletion() {
     policy_path=$(_mole_normalize_deletion_policy_path "$path")
     _MOLE_VALIDATION_REASON="protected"
 
+    # Without the protection rules no path can be shown to be unprotected, so
+    # a caller that loaded file_ops.sh alone gets a refusal, never a skipped check.
+    if ! declare -F should_protect_path > /dev/null 2>&1; then
+        log_error "Path validation failed: protection rules not loaded: $path"
+        return 1
+    fi
+
     # Check symlink target if path is a symbolic link
     if [[ -L "$path" ]]; then
         local link_target
@@ -1256,7 +1263,7 @@ validate_path_for_deletion() {
                 log_error "Path validation failed: resolves into a critical system path: $path -> $resolved_path"
                 return 1
             fi
-            if declare -f should_protect_path > /dev/null 2>&1 && should_protect_path "$resolved_path"; then
+            if should_protect_path "$resolved_path"; then
                 _mole_record_uninstall_refusal "$path" protected
                 if [[ "${MO_DEBUG:-0}" == "1" ]]; then
                     log_warning "Path validation: resolves into a protected path: $path -> $resolved_path"
@@ -1363,16 +1370,14 @@ validate_path_for_deletion() {
     fi
 
     # Check if path is protected (keychains, system settings, etc)
-    if declare -f should_protect_path > /dev/null 2>&1; then
-        if _mole_is_user_trash_top_level_item "$policy_path"; then
-            :
-        elif should_protect_path "$policy_path"; then
-            _mole_record_uninstall_refusal "$path" protected
-            if [[ "${MO_DEBUG:-0}" == "1" ]]; then
-                log_warning "Path validation: protected path skipped: $policy_path"
-            fi
-            return 1
+    if _mole_is_user_trash_top_level_item "$policy_path"; then
+        :
+    elif should_protect_path "$policy_path"; then
+        _mole_record_uninstall_refusal "$path" protected
+        if [[ "${MO_DEBUG:-0}" == "1" ]]; then
+            log_warning "Path validation: protected path skipped: $policy_path"
         fi
+        return 1
     fi
 
     return 0
@@ -2456,7 +2461,11 @@ mole_delete() {
     # path is gone afterwards. Use "unknown" (not 0) on failure so the log
     # never lies about a multi-GB delete by recording it as 0KB.
     local size_kb="unknown"
-    if [[ -e "$path" ]]; then
+    local skip_size_probe=false
+    if [[ "${MOLE_UNINSTALL_MODE:-0}" == "1" ]] && mole_sizing_would_ask_for_app_data "$path"; then
+        skip_size_probe=true
+    fi
+    if [[ -e "$path" && "$skip_size_probe" != "true" ]]; then
         local raw_size=""
         local du_rc=0
         if [[ "$needs_sudo" == "true" ]]; then
@@ -2815,6 +2824,19 @@ APPLESCRIPT
 
     debug_log "Finder moved application to Trash: $path"
     return 0
+}
+
+# Print the test-only path override held in the variable named by $1, or
+# the default $2. These seams choose a root that cleanup deletes from, some
+# through sudo, so like MOLE_TEST_TRASH_DIR they are read only under
+# MOLE_TEST_MODE / MOLE_TEST_NO_AUTH: an exported value in a real run cannot
+# redirect what Mole removes.
+mole_test_path_override() {
+    local name="$1" fallback="${2:-}" value=""
+    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+        value="${!name:-}"
+    fi
+    printf '%s\n' "${value:-$fallback}"
 }
 
 # Move a path to the macOS Trash. Test harnesses set MOLE_TEST_TRASH_DIR to
@@ -3472,6 +3494,13 @@ safe_find_delete() {
         return 1
     fi
 
+    # Whole days only, without a leading zero, before `[[ -gt ]]` evaluates it
+    # as arithmetic.
+    if [[ ! "$age_days" =~ ^(0|[1-9][0-9]*)$ ]]; then
+        log_error "Invalid age: $age_days, must be a non-negative integer of days"
+        return 1
+    fi
+
     debug_log "Finding in $base_dir: $pattern, age: ${age_days}d, type: $type_filter"
 
     local find_args=("-maxdepth" "5" "-name" "$pattern" "-type" "$type_filter")
@@ -3601,8 +3630,18 @@ safe_sudo_find_delete() {
         log_error "Invalid type filter: $type_filter, must be 'f' or 'd'"
         return 1
     fi
-    if [[ ! "$age_days" =~ ^[0-9]+$ ]]; then
-        log_error "Invalid age: $age_days, must be a non-negative integer"
+    # Age is whole days, or whole minutes written as `<N>m` for a target whose
+    # files never live a day (#1994). Scan and the per-file recheck below use
+    # the same find test.
+    local age_test="-mtime"
+    local age_value="$age_days"
+    # No leading zero: `[[ 08 -gt 0 ]]` is an invalid octal number, which
+    # would drop the age test from the scan while the recheck kept it.
+    if [[ "$age_days" =~ ^(0|[1-9][0-9]*)m$ ]]; then
+        age_test="-mmin"
+        age_value="${BASH_REMATCH[1]}"
+    elif [[ ! "$age_days" =~ ^(0|[1-9][0-9]*)$ ]]; then
+        log_error "Invalid age: $age_days, must be a non-negative integer of days or <N>m minutes"
         return 1
     fi
     if [[ ! "$max_depth" =~ ^[1-5]$ ]]; then
@@ -3727,7 +3766,7 @@ safe_sudo_find_delete() {
         return "$link_rc"
     fi
 
-    debug_log "Finding, sudo, in $base_dir: $pattern, age: ${age_days}d, type: $type_filter"
+    debug_log "Finding, sudo, in $base_dir: $pattern, age: $age_test +$age_value, type: $type_filter"
 
     local find_args=("-maxdepth" "$max_depth")
     local match_all_names=false
@@ -3752,8 +3791,8 @@ safe_sudo_find_delete() {
         fi
     fi
     find_args+=("-type" "$type_filter")
-    if [[ "$age_days" -gt 0 ]]; then
-        find_args+=("-mtime" "+$age_days")
+    if [[ "$age_value" -gt 0 ]]; then
+        find_args+=("$age_test" "+$age_value")
     fi
 
     # Materialize the completed scan before deleting anything. Process
@@ -3956,8 +3995,9 @@ safe_sudo_find_delete() {
                 _mole_bounded_sudo "$batch_timeout" \
                     -n xargs -0 /bin/sh -c '
                         stat_tool=$1
-                        age_days=$2
-                        shift 2
+                        age_test=$2
+                        age_value=$3
+                        shift 3
                         for record do
                             dev=${record%%:*}
                             rest=${record#*:}
@@ -3966,8 +4006,8 @@ safe_sudo_find_delete() {
                             mtime=${rest%%:*}
                             path=${rest#*:}
                             expected=$dev:$ino:$mtime
-                            if [ "$age_days" -gt 0 ]; then
-                                actual=$(/usr/bin/find "$path" -maxdepth 0 -type f -mtime "+$age_days" \
+                            if [ "$age_value" -gt 0 ]; then
+                                actual=$(/usr/bin/find "$path" -maxdepth 0 -type f "$age_test" "+$age_value" \
                                     -exec "$stat_tool" -f%d:%i:%m {} \; 2>/dev/null) || continue
                             else
                                 actual=$($stat_tool -f%d:%i:%m "$path" 2>/dev/null) || continue
@@ -3976,7 +4016,7 @@ safe_sudo_find_delete() {
                             /bin/rm -f -- "$path" || exit 1
                             printf "%s\0" "$path"
                         done
-                    ' sh "$STAT_BSD" "$age_days" > "$batch_result_file" 2> /dev/null || batch_rc=$?
+                    ' sh "$STAT_BSD" "$age_test" "$age_value" > "$batch_result_file" 2> /dev/null || batch_rc=$?
 
             local batch_ts=""
             local batch_command=""
@@ -4170,6 +4210,21 @@ mole_item_size_continues() {
 }
 
 # Calculate total size for multiple paths
+# macOS asks "wants to access data from other apps" when a process without Full
+# Disk Access reads into another app's container, and the read blocks until the
+# prompt is answered. A size is not worth that, so those rows go unmeasured.
+# An unknown grant counts as no grant: the prompt would still block.
+mole_sizing_would_ask_for_app_data() {
+    case "$1" in
+        "$HOME/Library/Containers/"?* | "$HOME/Library/Group Containers/"?*) ;;
+        *) return 1 ;;
+    esac
+    if has_full_disk_access; then
+        return 1
+    fi
+    return 0
+}
+
 calculate_total_size() {
     local files="$1"
     local total_kb=0 file
@@ -4185,6 +4240,7 @@ calculate_total_size() {
     done <<< "$filtered"
 
     for file in "${unique_paths[@]+"${unique_paths[@]}"}"; do
+        mole_sizing_would_ask_for_app_data "$file" && continue
         local size_kb=0
         local size_rc=0
         size_kb=$(get_path_size_kb "$file") || size_rc=$?

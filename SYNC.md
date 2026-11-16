@@ -82,7 +82,7 @@ Mole CLI (macOS): Implemented in source. Mole CLI (Windows): Implemented in sour
 | Vesktop caches | Released (V1.66.0); Mole Mac Implemented (unreleased) | `clean_communication_apps` in `lib/clean/app_caches.sh` cleans Vesktop's `sessionData/Cache` and `sessionData/Code Cache` through `mole_safe_clean_app_cache`, which keeps both while any process runs from `Vesktop.app`. Vesktop moves Electron's session data below `~/Library/Application Support/vesktop/sessionData`, so the Discord row never reached it. `vencordFiles`, web storage, settings and themes stay. A Mac held 749 MB and 235 MB in those two folders (Vesktop 1.6.8). Test in `tests/clean_app_caches.bats`, observed red on the old code. Mole Mac: Implemented 2026-10-28 in its `communicationCaches` list (unreleased). Mole CLI (Windows): Implemented in source: `lib/clean/caches.ps1` cleans `sessionData` Cache, Code Cache and GPUCache guarded by `vesktop`. |
 | Futu NiuNiu update downloads | Released (V1.62.0) | `clean_futu_update_downloads` in `lib/clean/app_caches.sh` takes the children of the sandboxed `LiveUpdate/mac_qtnn` folder only, refuses a symlinked folder and re-asks `futu_running` (`FTNN` and its helpers) at every sink; no `should_protect_path` carve-out was needed. Mole Mac parity: the `Futu Update Downloads` row. Tests in `tests/clean_app_caches.bats`, red-run on the process pattern, the symlink check and the sink refusal. Source `7b2a1960` is in `V1.62.0`; the public script-channel source archive's `lib/clean/app_caches.sh` was downloaded and matched byte-for-byte against the tag on 2026-10-24. |
 | Live privileged helper without a bundle-id name | Released (V1.63.0) | `_plist_is_orphaned` in `lib/clean/apps.sh` asks `bundle_has_installed_app` about a still-present `/Library/PrivilegedHelperTools` helper only when its id is reverse-DNS (a `com.`, `org.`, `net.` or `io.` prefix, as the bare-helper pass); a plain name such as a cloud-print updater keeps its plist. Mole Mac parity `ee7c4ae4e` (`OrphanServiceScanner.plistIsOrphaned`). Test `clean_orphaned_system_services keeps a live helper whose name is no bundle id` in `tests/clean_apps.bats`, red on the old code. |
-| Live privileged helper built on this Mac | Implemented (unreleased, `58844259`); Mole Mac Implemented (unreleased); Mole CLI (Windows) Not applicable (no launchd services) | `_plist_is_orphaned` and the bare-helper pass in `lib/clean/apps.sh` count a present `/Library/PrivilegedHelperTools` binary as an app's orphan only when `_privileged_helper_is_developer_id_signed` (`codesign --verify -R` with Apple's Developer ID requirement) accepts it, so a user's clang-built, ad-hoc, self-signed or Apple Development helper stays (Mole Mac field report 2026-11-02). Mole Mac parity `OrphanServiceScanner.helperIsDeveloperIDSigned`. Tests `clean_orphaned_system_services keeps a live helper built on this Mac` and `clean_orphaned_system_services lists a bare helper only when it is Developer ID signed` in `tests/clean_apps.bats`, the second red on the old code. Next check: confirm in the next CLI release. |
+| Live privileged helper built on this Mac | Released (V1.68.0, `58844259`); Mole Mac Implemented (unreleased); Mole CLI (Windows) Not applicable (no launchd services) | `_plist_is_orphaned` and the bare-helper pass in `lib/clean/apps.sh` count a present `/Library/PrivilegedHelperTools` binary as an app's orphan only when `_privileged_helper_is_developer_id_signed` (`codesign --verify -R` with Apple's Developer ID requirement) accepts it, so a user's clang-built, ad-hoc, self-signed or Apple Development helper stays (Mole Mac field report 2026-11-02). Mole Mac parity `OrphanServiceScanner.helperIsDeveloperIDSigned`. Tests `clean_orphaned_system_services keeps a live helper built on this Mac` and `clean_orphaned_system_services lists a bare helper only when it is Developer ID signed` in `tests/clean_apps.bats`, the second red on the old code. |
 | Feishu, WeChat and Codex caches from a work-Mac inventory | Released (V1.62.0); Codex in-app browser partition Intentional difference | Maintainer direction 2026-10-19. `clean_feishu_service_worker_caches` adds the `iron/users/*/profile_main` engine and the sandboxed `com.bytedance.macos.feishu` trees; `Caches/LarkShell` and the sandboxed container Caches go through `_feishu_disk_cache_delete_guard_allows` while Feishu and Lark are stopped. `clean_wechat_container_caches` takes `app_data/radium/web/profiles/*/{Cache,Service Worker/CacheStorage}`, admitted by `_is_wechat_web_profile_cache_child` in `should_protect_path`; IndexedDB, WebStorage and `radium/users` stay protected. Mole Mac takes the same paths plus Codex's `Application Support/Codex/Default/Partitions` cache leaves, which the CLI leaves out because its Codex cleanup stays out of Application Support. Tests in `tests/clean_app_caches.bats` and `tests/core_safe_functions.bats`, red-run before this change. Source `d8ad7973` is in `V1.62.0`; the public script-channel source archive's `lib/clean/app_caches.sh` was downloaded and matched byte-for-byte against the tag on 2026-10-24. |
 | Uninstall leftovers Mole Mac keeps but the CLI deleted | Released (V1.60.0) | Raycast `Caches/com.raycast.macos` (clipboard images) and `Caches/MullvadBrowser` (profile root) are opt-in rows like Spotify (`lib/uninstall/review.sh`); DevEco takes only `Caches/Huawei/DevEcoStudio*` and `Logs/Huawei/DevEcoStudio*`, never the shared Huawei roots; an executable named `Electron` names no app, so crash reports fall back to the app name, the running label skips it, and `force_kill_app` quits only by bundle id instead of `pkill -x Electron`; `mo clean` never offers `com.microsoft.autoupdate.helper` or management, security and VPN services (Mac's vendor tokens), checked before the binary probes so an installed helper is covered too. Tests in `tests/uninstall.bats`, `tests/uninstall_safety.bats`, `tests/clean_apps.bats`, each observed red on the old code. |
 | Embedded-id and vendor-nested Caches/Logs on uninstall | Intentional difference | Mac makes them review rows; the CLI keeps removing them with the confirmed uninstall. They are rebuildable caches and logs, no real collision has been found, and an extra opt-in row on many ordinary uninstalls costs more than it protects. Revisit with a real report. |
@@ -127,14 +127,14 @@ Implemented in source (Mole CLI (macOS), `main` at `709efa56`), one commit each:
 
 ## 2026-11-01 Release highlights after `mo update`
 
-Implemented in source (Mole CLI (macOS), `main`): a successful stable `mo update`, through the installer or Homebrew, prints up to four changelog titles of the installed version from its GitHub release and the release link; nightly installs, non-terminal output and failed lookups print nothing, and the update's exit status is unchanged (`lib/core/common.sh` `mole_print_release_highlights`, `tests/update.bats`). Not released until the next tagged version ships it.
+Released (V1.68.0; Mole CLI (macOS), `main`): a successful stable `mo update`, through the installer or Homebrew, prints up to four changelog titles of the installed version from its GitHub release and the release link; nightly installs, non-terminal output and failed lookups print nothing, and the update's exit status is unchanged (`lib/core/common.sh` `mole_print_release_highlights`, `tests/update.bats`). Released in V1.68.0.
 
 - Mole Mac: Not applicable. Sparkle shows each version's notes before installing and the in-app What's New card lists them after.
 - Mole CLI (Windows): Implemented in source (`884eedc0`): after a pull that changes `VERSION`, `mo update` prints the published `V<version>-windows` release's changelog titles and link.
 
 ## 2026-11-04 Byte sizes that round up to the next unit
 
-Implemented in source (Mole CLI (macOS), `main`, `2335f055`, tw93/Mole#1914): `units.BytesSI` picked the unit before rounding to one decimal, so `mo analyze` printed 999,999 B as "1000.0 kB" where Finder shows 1 MB; a value that rounds to 1000.0 now moves up one unit (`internal/units/bytes.go`, `TestBytesSI`). Not released until the next tagged version ships it.
+Released (V1.69.0; Mole CLI (macOS), `main`, `2335f055`, tw93/Mole#1914): `units.BytesSI` picked the unit before rounding to one decimal, so `mo analyze` printed 999,999 B as "1000.0 kB" where Finder shows 1 MB; a value that rounds to 1000.0 now moves up one unit (`internal/units/bytes.go`, `TestBytesSI`). Released in V1.69.0.
 
 - Mole Mac: Not applicable. Sizes go through Foundation's `ByteCountFormatter`, which picks the unit after rounding.
 - Mole CLI (Windows): Implemented (`f07253a7`).
@@ -142,7 +142,7 @@ Implemented in source (Mole CLI (macOS), `main`, `2335f055`, tw93/Mole#1914): `u
 
 ## 2026-11-04 APFS snapshots from other backup apps
 
-Implemented in source (Mole CLI (macOS), `main`, `a08c6885`, tw93/Mole#1916): Synology Active Backup, Carbon Copy Cloner and similar tools leave APFS snapshots on the data volume that pin deleted files like Time Machine ones, and Mole counted only `com.apple.TimeMachine.<date>` names and probed only with Time Machine configured. `mo clean` now prints a read-only `APFS snapshots` row (count plus owner prefix) from `tmutil listlocalsnapshots /` whether or not Time Machine is set up, through `mole_local_snapshot_rows` in `lib/clean/snapshots.sh`; `mo analyze` counts the same names. Apple's other `com.apple.*` snapshots stay out, and nothing is sized or deleted. Not released until the next tagged version ships it.
+Released (V1.69.0; Mole CLI (macOS), `main`, `a08c6885`, tw93/Mole#1916): Synology Active Backup, Carbon Copy Cloner and similar tools leave APFS snapshots on the data volume that pin deleted files like Time Machine ones, and Mole counted only `com.apple.TimeMachine.<date>` names and probed only with Time Machine configured. `mo clean` now prints a read-only `APFS snapshots` row (count plus owner prefix) from `tmutil listlocalsnapshots /` whether or not Time Machine is set up, through `mole_local_snapshot_rows` in `lib/clean/snapshots.sh`; `mo analyze` counts the same names. Apple's other `com.apple.*` snapshots stay out, and nothing is sized or deleted. Released in V1.69.0.
 
 - Mole Mac: Implemented (`11ad35c68`). One read-only row names the owners, with no size and no delete; `PurgeableSpaceManager.snapshotCount` and `tmutil deletelocalsnapshots /` stay Time Machine's alone.
 - Mole CLI (Windows): Not applicable. Windows has no APFS snapshots; Volume Shadow Copies are a different mechanism and are not in scope.
@@ -162,7 +162,7 @@ Implemented in source (Mole CLI (macOS), `main`, `d2341ba9`): the sweep skips `C
 
 Source: Mole Mac fixed a freshness window that read a stamp from the future (the system clock was set back) as fresh, so a stale answer lasted until the clock caught up. The rule is `0 <= age < window`: a negative age reads as expired.
 
-Implemented in source (Mole CLI (macOS), `main`): the temp-root prune stamp (`prune_stale_mole_tmpdir_leftovers` used `find -mmin -N`, which matches a future mtime, so the daily pass was skipped), the Homebrew cleanup throttle (`brew_cleanup_ran_recently`), the pkgutil receipt cache (`lib/core/pkg_receipts.sh`), the uninstall metadata refresh TTL (the awk in `bin/uninstall.sh:_scan_finalize_index`) and the Analyze overview and scan caches (`cmd/analyze/cache.go`, through `stampWithin`) now treat a negative age as expired. Already guarded and unchanged: `check_for_updates` (`now >= checked`), the installed-apps cache in `lib/clean/apps.sh` (`age -ge 0`), the Status collector timers (in-process `time.Now()` values carry a monotonic reading). Age checks that decide whether to delete or list an old item keep a future-dated one, the safe direction, and are unchanged; so is the uninstall metadata lock, because stealing a live lock after a small clock step back is worse than waiting out its four-second retry. Bats cases in `tests/user_file_ops.bats`, `tests/clean_system_maintenance.bats` and `tests/uninstall_scan_bash32.bats` and Go cases in `cmd/analyze/cache_clock_test.go` fail on the previous code. Not released until the next tagged version ships it.
+Released (V1.70.0; Mole CLI (macOS), `main`, `1493ee17`): the temp-root prune stamp (`prune_stale_mole_tmpdir_leftovers` used `find -mmin -N`, which matches a future mtime, so the daily pass was skipped), the Homebrew cleanup throttle (`brew_cleanup_ran_recently`), the pkgutil receipt cache (`lib/core/pkg_receipts.sh`), the uninstall metadata refresh TTL (the awk in `bin/uninstall.sh:_scan_finalize_index`) and the Analyze overview and scan caches (`cmd/analyze/cache.go`, through `stampWithin`) now treat a negative age as expired. Already guarded and unchanged: `check_for_updates` (`now >= checked`), the installed-apps cache in `lib/clean/apps.sh` (`age -ge 0`), the Status collector timers (in-process `time.Now()` values carry a monotonic reading). Age checks that decide whether to delete or list an old item keep a future-dated one, the safe direction, and are unchanged; so is the uninstall metadata lock, because stealing a live lock after a small clock step back is worse than waiting out its four-second retry. Bats cases in `tests/user_file_ops.bats`, `tests/clean_system_maintenance.bats` and `tests/uninstall_scan_bash32.bats` and Go cases in `cmd/analyze/cache_clock_test.go` fail on the previous code. Released in V1.70.0.
 
 - Mole Mac: Implemented there first (2026-11-05).
 - Mole CLI (Windows): Implemented in source for the installed-app inventory cache (`SYNC.md` on `windows`); its update-notice state was already guarded.
@@ -199,6 +199,20 @@ Released (Mole CLI (macOS), `V1.70.0`): `ae5a6eb5` and `57f2f633`, merged in `7e
 - Mole Mac: Not applicable. It has no purge paths file.
 - Mole for Windows: Not applicable. It has no purge paths file.
 
+## 2026-11-09 Orphan data age reads the files inside
+
+Source: Mole CLI (macOS) `is_bundle_orphaned` and `orphan_cleanup_candidate_still_eligible`. Orphaned caches, logs and saved state now need every entry inside to be past the 30-day age, at discovery and at the final sink, not only the directory. The 30-day value itself did not change.
+
+- Mole Mac: Intentional difference. Its orphan rows have their own scanner and quiet period, start unchecked and go to the Trash.
+- Mole for Windows, Mole CLI (Windows): Not applicable. Neither has this directory-age check.
+
+## 2026-11-09 Claude VM leftover evidence
+
+Source: Mole CLI (macOS) `is_claude_vm_bundle_orphaned` and `clean_orphaned_app_data`. The orphan check now accepts only a `*.bundle` directly under `Application Support/Claude/vm_bundles`, and its 7-day age walks every entry inside the bundle, at discovery and at the final sink, not only the directory.
+
+- Mole Mac: Not applicable. It protects `vm_bundles` and does not offer this row, on purpose.
+- Mole for Windows, Mole CLI (Windows): Not applicable. Neither checkout's code has this cleanup.
+
 ## 2026-11-07 Purge editor commands
 
 Source: PR #1940. `mo purge --paths` now runs an `EDITOR` that holds arguments, such as `code --wait`, and returns the editor's failure instead of reporting success.
@@ -208,3 +222,131 @@ Implemented in source (Mole CLI (macOS), `main`): `4917abd1`, merged in `2cc4f22
 - Mole CLI (Windows): Not applicable. `bin/purge.ps1` opens `notepad.exe` directly and never reads `EDITOR`.
 - Mole Mac: Not applicable. It has no purge paths editor and never reads `EDITOR`.
 - Mole for Windows: Not applicable. It has no purge paths editor and never reads `EDITOR`.
+
+## 2026-11-09 Buzz models in the user cache sweep
+
+Source: a 2026-11-09 review of model stores under `~/Library/Caches`. Buzz keeps downloaded Whisper models in platformdirs' cache folder, `~/Library/Caches/Buzz/models` on macOS (its FAQ names the folder; `BUZZ_MODEL_ROOT` overrides it), next to the plugins the user installed and their presentation CSS. The generic "User app cache" sweep removed the whole folder, the same shape as the llama.cpp store (`3b0f94df`).
+
+Implemented in source (Mole CLI (macOS), #1950): `~/Library/Caches/Buzz` joins `SAFETY_WHITELIST_PATTERNS`, so it holds under a custom whitelist too. Locked by `the user cache sweep keeps Buzz models and plugins even with a custom whitelist`, red on the old code.
+
+- Mole CLI (Windows): Not applicable. No generic `%LOCALAPPDATA%` sweep reaches Buzz's cache folder.
+- Mole CLI (Linux): Not applicable. Clean removes only allowlisted caches; an unknown `~/.cache` folder is listed, never selected.
+- Mole Mac: Implemented, `6c379a32c`: both block lists, the shape of llama.cpp.
+- Mole for Windows: Not applicable. Clean lists catalog rules and enumerates no `%LOCALAPPDATA%` folders; no Buzz or Puppeteer row exists.
+
+## 2026-11-09 Puppeteer browser installs
+
+Source: the same 2026-11-09 review. Puppeteer installs the browser it launches into `~/.cache/puppeteer` and runs it from there; `clean_browsers` removed it as "Puppeteer browser cache" since `5a8d7666` (V1.23.2), the shape of ms-playwright, Camoufox and Cypress (#1400, #1941, #1945).
+
+Implemented in source (Mole CLI (macOS), `4cd5be26`): the row is gone and `should_protect_path` keeps the folder and its children. Locked by `should_protect_path applies high-risk cleanup denylist` and `clean_browsers calls expected cache paths`, both red on the old code.
+
+- Mole CLI (Linux): Same rule in `lib/clean/rules.sh` (`Puppeteer browsers`); removed by #1949 on `linux`.
+- Mole CLI (Windows): Not applicable. It has no Puppeteer row.
+- Mole Mac: Implemented. Its path guard and whitelist already keep `~/.cache/puppeteer`.
+- Mole for Windows: Not applicable. No Puppeteer row exists in its catalog.
+
+## 2026-11-09 Clean write refusal and protected containers
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo clean` stops with a refusal when every folder it checks refuses a write, instead of ending on "Cleanup complete" with nothing removed; any other failure carries on, above all a full disk | Implemented (Mole CLI (macOS), `bab30aa8`); Implemented (Mole CLI (Windows), `3cd63f92`, with its previews fixed in `16eaba98`); Not applicable (Mole Mac, Mole for Windows: desktop apps with their own failure rows) | `tests/clean_core.bats`, incident I-53. |
+| An uninstall keeps a `Containers/<id>` or `Group Containers/<id>` folder holding an entry System Integrity Protection guards, so it never reaches the Trash, where it would fail every Empty Trash; asked only with Full Disk Access and only of the container's own folder | Implemented (Mole CLI (macOS), `f316ef8a`); Implemented (Mole Mac record); Not applicable (Mole for Windows, Mole CLI (Windows): no sandbox containers) | `tests/uninstall_remove_file_list.bats`, real probes of `/System/Library/Sandbox` and an ordinary tree. |
+
+## 2026-11-09 Artifacts in use and lsof spellings
+
+Source heads read on 2026-11-09: `main` at `3feb1dd0`, `windows` at `cf28b442`, Mole Mac at `3d93c4f83`, Mole for Windows at `3c25648f`.
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| A project artifact a running process uses is not offered or removed (#1958) | Implemented (Mole CLI (macOS), `6f2c0ce5`); Implemented (Mole CLI (Windows), `659bc206`); Implemented (Mole Mac, `32c2b1a71`); Not applicable (Mole for Windows: Clean has no project build output row) | Bats `purge_artifact_in_use`, `PurgeBoundary.Tests.ps1`, `testAProjectArtifactSomethingHoldsIsSeenAndAnIdleOneIsNot`. Mole CLI (Linux) is recorded on `linux`. |
+| `lsof` spellings of a non-ASCII or backslash path are read as the real name | Implemented (Mole CLI (macOS), `c73bb7c9`, `52dad8df`, `ab24a019`); Implemented (Mole Mac, `32c2b1a71`: it also decoded names for its container and AI scratch checks); Not applicable (Mole CLI (Windows), Mole for Windows: no `lsof`) | `testAHeldFolderWithANonASCIINameIsSeenInARealListingWithoutALocale` on real lsof. |
+| A packaged SwiftPM scratch folder is offered as its compiler output (#1955) | Implemented (Mole CLI (macOS), `1ae52ae5`); Intentional difference (Mole Mac: `.build/checkouts` is a known rebuildable layout, so the folder is already offered whole); Not applicable (Mole CLI (Windows): SwiftPM is not a purge pattern; Mole for Windows: no such row) | `clean-scanner.md`. |
+| A folder holding Epic games is not an uninstall leftover (#1948) | Implemented (Mole CLI (Windows), `3313adbe`); Implemented (Mole for Windows, `0b88ce85`); Not applicable (Mole CLI (macOS), Mole Mac: uninstall follows the app bundle and bundle-id leftovers, and no scan reaches `/Users/Shared/Epic Games`) | `AnEpicGameCountsAsContentAtTheGameFolderAndOneLevelInside`. |
+| Search matches every word (`1de902bf`), rows keep a long name's tail (`60a64902`), other apps' containers stay unmeasured without Full Disk Access (`157296a6`) | Implemented (Mole CLI (macOS)); Implemented (Mole CLI (Windows) and Mole for Windows: sources of the first two; Mole Mac: source of the third) | Pending for the third only. On the test Mac on 2026-11-10, with Terminal's app-data grant reset to undecided, a direct `du` of `~/Library/Containers/com.if.Amphetamine` blocked on the prompt, but `mo uninstall --dry-run` for Amphetamine and WeChat finished in about 9 seconds on both `157296a6` and the parent `323e2171`: discovery stops at `Shared leftovers kept (some paths unreadable)` before any container `du`, so neither sample tells the versions apart. Both prompts were then denied, which restores the earlier state. Next check: an app whose leftovers stay readable without Full Disk Access. |
+
+## 2026-11-10 Three-CLI review
+
+Source heads read on 2026-11-10: `main` at `1baecd15`, `windows` at `075215a8`, `linux` at `cf42a724`. Fixes landed as `main` `2ed8427b`..`dfd0e583`, `linux` `210e3932`..`15e995aa` and `windows` `06b07a9d`..`46c53900`; the `main` commits shipped in V1.71.0 and the `linux` commits in V0.6.0-linux, both on 2026-11-10 (assets checked against `SHA256SUMS` and, for V1.71.0, their attestations; a script install of the previous version updated to each with `mo update`); the `windows` commits shipped in V1.44.0-windows the same day, signed and checked the same way. Mole Mac and Mole for Windows were not reviewed; the rows name what each should check.
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| A test-only path seam cannot redirect cleanup in a real run | Implemented (Mole CLI (macOS), `2ed8427b`: `mole_test_path_override` honors seven seams only under `MOLE_TEST_MODE` / `MOLE_TEST_NO_AUTH`); Implemented (Mole CLI (Linux), `210e3932`: seven locations are globals set at load, never read from the environment); Not applicable (Mole CLI (Windows): the only environment values its product code reads are `MOLE_DRY_RUN`, `MOLE_DEBUG`, `MO_NO_OPLOG` and the `MO_ANALYZE_PATH` handoff, none a cleanup root; grep for `$env:MOLE_` and `$env:MO_` on `075215a8`) | `test-only cleanup root overrides are read only through the test-mode guard` in `tests/dev_extended.bats`. Mole Mac: checked 2026-11-11, Not applicable: its launch hooks and test-host switch compile out of Release builds, and the only environment values a release build reads for a location are the tools' own (`CARGO_HOME`, `RUSTUP_HOME`, `DENO_DIR`, `OLLAMA_MODELS`), validated as absolute paths and still behind PathGuard at the sink. |
+| Deletion validation refuses when the protection rules are not loaded | Implemented (Mole CLI (macOS), `2ed8427b`); Not applicable (Mole CLI (Windows): `Test-ProtectedPath` is defined in `base.ps1`, which every sink loads, and already fails closed); Not applicable (Mole CLI (Linux): `mole_is_protected_path` lives in the same file as the sink checks) | `validate_path_for_deletion refuses every path when protection rules are not loaded` in `tests/core_safe_functions.bats`. |
+| Uninstall keeps Buzz models and holds back virtual machines, bottles and local-only chat stores | Implemented (Mole CLI (macOS), `5cbe27b7`: `Caches/Buzz` is personal data, UTM and VirtualBuddy stay unselected with `--with-data`); Implemented (Mole CLI (Linux), `210e3932`: native GNOME Boxes and Bottles, Signal, Element, Session, Jami, Flatpak Viber); Implemented (Mole Mac record: `Library/Caches/Buzz` is a protected path, refused at the sink and never offered); Intentional difference (Mole Mac: the UTM container and other virtual machine data are listed and ticked like other data rows, moved to the Trash, by the maintainer's 2026-10-31 decision that an uninstall takes the app's data; game and bottle libraries are never rows there); Implemented (Mole for Windows, `19bae17f`: a folder holding any `.vhdx`, `.vhd`, `.vmdk` or `.vdi` in itself or a direct child is kept; its review never offered `VirtualBox VMs` under the profile or a Hyper-V store); Implemented (Mole CLI (Windows), `681f2766`: the same extensions in `Test-MoleInstallContentFree`) | `tests/uninstall_safety.bats`, `tests/uninstall_review.bats`. Mole Mac read from its rules and catalog on 2026-11-11, not re-run on a VirtualBuddy install. |
+| A sandboxed app's cache folder is narrowed like the native cache | Implemented (Mole CLI (Linux), `210e3932`: Flatpak and Snap caches keep JetBrains LocalHistory, Lutris sign-in state and the names native rules never clean; GPU shader caches there need `--gpu-shaders`); Not applicable (Mole CLI (macOS), Mole CLI (Windows): no rule takes a whole per-app cache home as one root; app caches are exact leaves) | `tests/clean.bats` on `linux`. |
+| The sudo gate never treats typed password characters as a skip | Released earlier (Mole CLI (macOS), the Space-skip cases in `tests/clean_core.bats`); Implemented (Mole CLI (Linux), `210e3932`: an ordinary key goes to sudo's prompt, and what was typed never reaches the shell); Not applicable (Mole CLI (Windows): elevation is a UAC prompt, no password is typed into the terminal) | `tests/clean_sudo_gate_pty.py` on `linux`. |
+| A middle-cut name stays inside its column on wide characters | Implemented (Mole CLI (macOS), `dfd0e583`); Implemented (Mole CLI (Linux), `c80d3da5`); Implemented (Mole CLI (Windows), `cd60e200`) | `TestTruncateMiddleNeverExceedsTheColumnBudget`. Found while porting `8098ac2c` to Linux. |
+| Byte sizes step up at a unit boundary (#1914), names measured by grapheme width, status resize guidance (#1904) | Released (Mole CLI (macOS), V1.69.0 and earlier); Implemented (Mole CLI (Linux), `c80d3da5`); Released earlier (Mole CLI (Windows), the source of the width change) | Linux forked the Go TUIs before these fixes and had no row for them. |
+| `purge --dry-run` and `uninstall --dry-run` preview without a terminal | Released earlier (Mole CLI (macOS), Mole CLI (Linux)); Implemented (Mole CLI (Windows), `06b07a9d`, CLI-SYNC-18 there) | `skills/mole/references/windows.md` still tells an agent to hand these commands to the user; update the skill, its plugin copy and both versions when a tagged Windows version ships this. |
+| `mo history` condenses the log before parsing, `mo status` reads disk metadata from one plist | Implemented (Mole CLI (macOS), `0afbb83c`, `59c274a4`); Not applicable (Mole CLI (Windows): `history.ps1` parses with .NET strings, status has no `diskutil`); Implemented, by another route (Mole CLI (Linux): its parser was already awk and the cost was appending every record to Bash arrays, so only the newest `--limit` records are passed on; its status reads sysfs, so the disk change does not apply) | Measured on an M5 Pro: 5 MB log 4.15s to 0.80s, `status --json` 0.53s to 0.44s. Linux, on the devbox with a 5 MB log: 1.8s to 0.1s. |
+| Exit code for an unknown command, and `mo history --json` keys | Intentional difference: Mole CLI (macOS) and Mole CLI (Linux) exit 1, Mole CLI (Windows) exits 2; macOS has `deletions`, `trashed`, `rebuilt`, Windows `operations`, `recycled`, `uninstalled`, Linux `operations`, `trashed` | Scripts already depend on each; the skill references document each schema (CLI-SYNC-19 on `windows`). |
+| `mo remove --dry-run` | Released earlier (Mole CLI (macOS), Mole CLI (Linux)); Implemented (Mole CLI (Windows), `bec984bb`, CLI-SYNC-19) | The preview is a `-DryRun` switch on `Uninstall-Mole` in `install.ps1`, so it runs the removal's own path; `mo remove` there now returns its script's exit code. |
+| Tuning and switches are not environment variables | Released earlier (Mole CLI (macOS): AGENTS.md treats a new variable as a setting); Implemented (Mole CLI (Linux), `954da7d7`: `MO_PURGE_PROBE_TIMEOUT`, `MO_PURGE_WALK_TIMEOUT` and `MOLE_NO_UPDATE_CHECK` removed, maintainer decision 2026-11-10); Not applicable (Mole CLI (Windows): it reads none) | The purge bounds are fixed globals and the update notice has no switch. |
+
+
+## 2026-11-12 Analyze head folders and CloudStorage
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo analyze` refuses to move `~/Library`, Documents, Desktop, Downloads, Pictures, Movies, Music and every direct child of `~/Library` or `/Library`, compared by case and file identity; what is inside stays deletable | Implemented (Mole CLI (macOS), `d3d162a9`); Implemented (Mole Mac: the source rule); Implemented (Mole CLI (Windows) and Mole for Windows: the same rule on Windows folders) | `TestAnalyzeDeleteRefusesHeadFoldersButNotTheirContents`, failing on the previous code; an independent review probed slashes, case, the Data firmlink, a linked Library and an empty HOME. |
+| The overview skips `~/Library/CloudStorage` like `Mobile Documents`, and the overview cache schema moves to 11 | Implemented (Mole CLI (macOS), `d3d162a9`); Implemented (Mole Mac: the source); Not applicable (Mole CLI (Windows), Mole for Windows: they read the recall attributes) | `TestOverviewSkipsCloudOnlyFolderRoots`. Drilling into `~/Library` still walks CloudStorage, as it walks Mobile Documents. |
+
+## 2026-11-12 Rounded rates and counts
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo status` picks the precision of a network or disk rate from the rounded value, so 0.996 and 9.97 MB/s read `1.0 MB/s` and `10 MB/s`, not `1.00` and `10.0` (#1981) | Implemented (Mole CLI (macOS), `397ee6ef`); Implemented (Mole CLI (Windows), `cfab29df`, CLI-SYNC-22); Implemented (Mole CLI (Linux), `0cd36a36`); Not applicable (Mole Mac and Mole for Windows: `NetworkMetrics.staysBelowNextUnit` and `StatusFormat.NetworkRate` already round first) | `TestFormatRate`, `TestFormatRateCompact` on each CLI. |
+| `mo analyze` shows 999,950 items and up as `1.0M`, not `1000.0k` (#1976) | Implemented (Mole CLI (macOS), `6a688120`); Implemented (Mole CLI (Windows), `cfab29df`, CLI-SYNC-22); Implemented (Mole CLI (Linux): it already stepped up); Not applicable (Mole Mac and Mole for Windows: no item-count label of this form) | `TestFormatNumber`. |
+
+## 2026-11-12 Colima VM data in Large files
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo clean`'s Large files review reports `~/.colima/_lima` as "Colima VM data" beside the Lima row, report-only like it (#1970) | Implemented (Mole CLI (macOS), `5066e7fd`); Implemented (Mole Mac: `SystemDataCatalog` already names Colima's embedded Lima); Not applicable (Mole CLI (Windows), Mole CLI (Linux): no Large files review; Mole for Windows: no Colima on Windows) | `large files measures each row once, at most four at a time, and prints them in order`, `large files queues every fixed review row for early measurement`, both red without the row. Orphaned Lima data disks stay a separate design. |
+
+## 2026-11-12 Analyze stops at mount points
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo analyze` no longer descends into a volume mounted below the scanned path, like `du -x`: the mount point stays a browsable 0-byte row and opening it scans that volume (#1979, #1980) | Implemented (Mole CLI (macOS), `f8c2fd3b`); Implemented (Mole Mac: Analyze's size walk never crosses `st_dev`, `analyze.md`); Not applicable (Mole CLI (Windows): `isLinkEntry` lists name-surrogate reparse points, volume mount folders included, without following them; Mole for Windows: `FileIdExtdDirectoryInfo` reads the same reparse points as links; Mole CLI (Linux): outside this model) | `TestScanPathConcurrentStopsAtMountPoints`, `TestLiveScanStopsAtMountPoints`, `TestFinishLiveScanKeepsMountRows`, `TestSpotlightLargeFilesStopAtMountPoints` and siblings. On macOS 26.7 `/Users`, `/Applications` and `/System/Library` share the root's `st_dev`, so `mo analyze /` keeps them. |
+
+## 2026-11-12 Sandbox cache listing is bounded
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo clean` lists each sandbox container's caches through `find` under the real timeout wrapper and the section deadline; a listing that fails or times out drops its partial candidates and the scan moves on, and the container sweeps take their own section budget (#1973, #1974) | Implemented (Mole CLI (macOS), `2dd073d2`); Not applicable (Mole Mac: `sandboxedAppCachePairs` reads each container's `Caches` with one in-process `contentsOfDirectory`, only with Full Disk Access, with no glob or per-entry probe, and sizes run under the bounded size probes; Mole CLI (Windows), Mole for Windows: no sandbox containers, only named `Packages` paths; Mole CLI (Linux): outside this model) | `failed container enumerations discard partial candidates and continue (#1973)`, `a blocked container listing is stopped by the real timeout wrapper (#1973)`, full CI on the PR head. |
+
+## 2026-11-12 Analyze keeps every Spotlight result
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo analyze`'s Spotlight large-file query kept only its last result line, since `strings.Lines` left the newline on each path; every line is now trimmed, so Spotlight's list can replace the walk's when it finds more (#1986) | Implemented (Mole CLI (macOS), `5487a011`); Not applicable (Mole Mac: `LargestFilesFinder` splits `mdfind` output on newlines, which drops them; Mole CLI (Windows), Mole for Windows: no Spotlight; Mole CLI (Linux): outside this model) | `TestSpotlightKeepsEveryOutputLine`, red on the old loop; `TestSpotlightLargeFilesStopAtMountPoints` now sends both candidates through one query. |
+
+## 2026-11-12 CloudStorage project caches past provider temp folders
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo clean`'s project-cache scan prunes `.tmp` folders, so an unreadable Google Drive `.tmp` no longer makes BSD `find` exit 1 and discard every match from `~/Library/CloudStorage`; other traversal errors still discard the root (#1988, #1990) | Implemented (Mole CLI (macOS), `601471d7`); Not applicable (Mole Mac: `enumerateProjectArtifacts` lists each directory with `contentsOfDirectory` and skips an unreadable one, so one blocked folder never drops the root; Mole CLI (Windows), Mole for Windows: no CloudStorage project-cache scan; Mole CLI (Linux): outside this model) | `scan_project_cache_root prunes provider temp folders but keeps readable CloudStorage projects (#1988)` and `scan_project_cache_root still discards results for other unreadable CloudStorage folders (#1988)`, on real BSD `find` with a mode-000 folder, plus full CI on the PR head. |
+
+## 2026-11-14 Nightly commit lookup on large responses
+
+Source-only fix for Mole CLI (macOS), `fc4316b0`: `get_latest_commit_from_github` parses the complete commit JSON with `plutil`, so an early-closing pipe cannot discard the top-level SHA when the response includes many file objects. API-only and explicit lookups pass the new 300-file regression without using the Git fallback. The complete local runner passes in a fresh shared worktree; this is not a package release.
+
+| Product | Status | Current consumer |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented in source | `lib/manage/update.sh:get_latest_commit_from_github`, `tests/update.bats` (`nightly commit lookup keeps the SHA from a large GitHub response`). |
+| Mole CLI (Linux) | Intentional difference | `install.sh:latest_commit` at `d68d06b0` requests `application/vnd.github.sha` and validates the raw SHA; it has no JSON file-list pipeline to repair. Source reviewed, not a Linux runtime test. |
+| Mole CLI (Windows) | Not applicable | `bin/update.ps1` at `2c6e8e99` updates source with Git; its stable update metadata in `lib/core/update_check.ps1` uses `Invoke-RestMethod`, not this Nightly commit parser. Source reviewed, not a Windows runtime test. |
+
+## 2026-11-15 Home overview hardlink accounting
+
+Source: Mole CLI (macOS), `3c4f01d8` (#2014). The Home measurement passes its included immediate children to one `du` so file identities are shared across them and top-level files. It still omits only the immediate `~/Library` and mounted children. The bounded Go fallback also shares the existing identity set; overview cache schema 14 rejects old totals. Real-hardlink regressions fail on the prior main and pass here. This is a source change, not a verified package release.
+
+| Product | Status | Consumer and evidence |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented in source | `cmd/analyze/scanner.go:getDirectorySizeFromDuSkippingImmediateChild`, `TestHomeOverviewDeduplicatesHardlinks` and the neighboring permission/symlink/mount tests. |
+| Mole CLI (Linux) | Implemented in source | `644a643e` on `linux` (#2013). uutils du 0.2.2, Ubuntu 25.10's default, counts hard links per operand even within one `du -c`, so Linux runs a single `du` over Home with the literal `~/.cache` path excluded rather than this repair's operand list. `TestHomeOverviewCountsHardlinksAcrossChildrenOnce` fails on the old code and passes on the new one under GNU du 9.1 and uutils du 0.2.2 on the devbox. |
+| Mole CLI (Windows) | Not applicable to this du repair | At `59f3dc5a`, `measureOverviewSize` uses `walkDirSize`, excluding AppData. Its file-ID/hardlink work landed separately as [#2012](https://github.com/tw93/Mole/pull/2012) (`be700a9e`) and the per-volume MFT record bitmap as [#2015](https://github.com/tw93/Mole/pull/2015) (`d4b1b7ad`); whether the overview shares one identity set across Home's children is not runtime-verified here. |
+| Mole Mac | Pending | Source reading only, 2026-11-16 at `dcad0f80`: `DiskScanner.scan` sizes every top-level child with its own `makeTopLevelEntry` walk, and the `WalkedChild` comment in `DiskScanner.swift` states that a per-child re-walk gives each subtree its own dedup set, so a file hard-linked into two siblings counts in both; `testHarvestNavigationRechecksNestedChangesAndHardLinkSiblings` asserts exactly that for a drill, and `resolveParentEntryFromChildResult` lets a fully sized children sum replace the parent row. A harvested listing from the parent walk dedups correctly (`testRetryHarvestKeepsGlobalHardLinkAccounting`). Next check: a runtime test that scans a folder whose two children share a hard link and compares the listing total with `du -sk`, before deciding whether the per-row double count is a defect or the intended per-folder view. |
+
+The Mole for Windows consumer remains unverified in this task. Linux also pins `/usr/bin/gnudu` ahead of the uutils `du` (`66047153`, `TestFindDuBinaryPrefersGNUDuOverUutilsDu`).

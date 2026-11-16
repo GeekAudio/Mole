@@ -23,11 +23,13 @@ func TestFormatRate(t *testing.T) {
 		{"at threshold", 0.01, "0.01 MB/s"},
 		{"small rate", 0.5, "0.50 MB/s"},
 		{"just under 1", 0.99, "0.99 MB/s"},
+		{"rounds up to 1", 0.996, "1.0 MB/s"},
 
 		// Medium rates (1 to < 10): 1 decimal place.
 		{"exactly 1", 1.0, "1.0 MB/s"},
 		{"medium rate", 5.5, "5.5 MB/s"},
 		{"just under 10", 9.9, "9.9 MB/s"},
+		{"rounds up to 10", 9.97, "10 MB/s"},
 
 		// Large rates (>= 10): no decimal places.
 		{"exactly 10", 10.0, "10 MB/s"},
@@ -42,6 +44,26 @@ func TestFormatRate(t *testing.T) {
 				t.Errorf("formatRate(%v) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFormatRateCompact(t *testing.T) {
+	tests := []struct {
+		input float64
+		want  string
+	}{
+		{0, "0"},
+		{0.5, "0.5"},
+		{9.9, "9.9"},
+		{9.97, "10"},
+		{10, "10"},
+		{123.4, "123"},
+	}
+
+	for _, tt := range tests {
+		if got := formatRateCompact(tt.input); got != tt.want {
+			t.Errorf("formatRateCompact(%v) = %q, want %q", tt.input, got, tt.want)
+		}
 	}
 }
 
@@ -1737,6 +1759,23 @@ func TestRenderMemoryCardHidesSwapSizeOnNarrowWidth(t *testing.T) {
 	swapLine := stripANSI(card.lines[2])
 	if strings.Contains(swapLine, "/") {
 		t.Fatalf("renderMemoryCard() narrow width should hide swap size, got %q", swapLine)
+	}
+}
+
+// Now that the level is real (#1963), normal is the usual answer, so only warn
+// and critical earn a line.
+func TestRenderMemoryCardShowsPressureOnlyWhenItNeedsAttention(t *testing.T) {
+	for pressure, want := range map[string]string{"": "", "normal": "", "warn": "Status warn", "critical": "Status critical"} {
+		card := renderMemoryCard(MemoryStatus{Used: 8 << 30, Total: 16 << 30, Available: 8 << 30, UsedPercent: 50, Pressure: pressure}, 60)
+		got := ""
+		for _, line := range card.lines {
+			if text := stripANSI(line); strings.HasPrefix(text, "Status") {
+				got = text
+			}
+		}
+		if got != want {
+			t.Errorf("pressure %q: status line %q, want %q", pressure, got, want)
+		}
 	}
 }
 

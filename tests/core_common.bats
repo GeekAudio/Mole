@@ -576,6 +576,36 @@ EOF
     [ "$output" = OK ]
 }
 
+@test "bytes_to_human never prints 1000 of a unit that has a next unit" {
+    output="$(
+        HOME="$HOME" /bin/bash --noprofile --norc << 'EOF'
+source "$PROJECT_ROOT/lib/core/common.sh"
+bytes_to_human 999499
+bytes_to_human 999500
+bytes_to_human 999999
+bytes_to_human 999949999
+bytes_to_human 999950000
+bytes_to_human 999999999
+bytes_to_human 1000000000
+bytes_to_human 1500000
+EOF
+    )"
+
+    bytes_lines=()
+    while IFS= read -r line; do
+        bytes_lines+=("$line")
+    done <<< "$output"
+
+    [ "${bytes_lines[0]}" = "999KB" ]
+    [ "${bytes_lines[1]}" = "1.0MB" ]
+    [ "${bytes_lines[2]}" = "1.0MB" ]
+    [ "${bytes_lines[3]}" = "999.9MB" ]
+    [ "${bytes_lines[4]}" = "1.00GB" ]
+    [ "${bytes_lines[5]}" = "1.00GB" ]
+    [ "${bytes_lines[6]}" = "1.00GB" ]
+    [ "${bytes_lines[7]}" = "1.5MB" ]
+}
+
 @test "bytes_to_human converts byte counts into readable units" {
     output="$(
         HOME="$HOME" /bin/bash --noprofile --norc << 'EOF'
@@ -945,6 +975,35 @@ EOF2
         "$HOME/.codex/logs_2.sqlite"; do
         result=$(HOME="$HOME" TARGET_PATH="$codex_state_path" /bin/bash --noprofile --norc -c 'source "$PROJECT_ROOT/lib/core/common.sh"; should_protect_path "$TARGET_PATH" && echo "protected" || echo "not-protected"')
         [ "$result" = "protected" ]
+    done
+}
+
+@test "should_protect_path protects Claude Code transcripts, file history and prompt history" {
+    for claude_state_path in \
+        "$HOME/.claude/projects" \
+        "$HOME/.claude/projects/-Users-me-app" \
+        "$HOME/.claude/projects/-Users-me-app/0b6c9f0e-1111-4222-8333-944455556666.jsonl" \
+        "$HOME/.claude/file-history" \
+        "$HOME/.claude/file-history/0b6c9f0e-1111-4222-8333-944455556666/1" \
+        "$HOME/.claude/history.jsonl" \
+        "$HOME/.claude" \
+        "$HOME/.Claude/projects/-Users-me-app" \
+        "$HOME/.CLAUDE/History.jsonl"; do
+        result=$(HOME="$HOME" TARGET_PATH="$claude_state_path" /bin/bash --noprofile --norc -c 'source "$PROJECT_ROOT/lib/core/common.sh"; should_protect_path "$TARGET_PATH" && echo "protected" || echo "not-protected"')
+        [ "$result" = "protected" ] || { echo "not protected: $claude_state_path"; return 1; }
+    done
+
+    # A HOME set with a trailing slash still names the same root.
+    local root_path="$HOME/.claude"
+    result=$(HOME="$HOME/" TARGET_PATH="$root_path" /bin/bash --noprofile --norc -c 'source "$PROJECT_ROOT/lib/core/common.sh"; should_protect_path "$TARGET_PATH" && echo "protected" || echo "not-protected"')
+    [ "$result" = "protected" ] || { echo "root not protected with HOME ending in /"; return 1; }
+
+    # A prefix sibling is not the transcript folder, and the root's other
+    # children (purge's worktree container) stay reachable.
+    local sibling_path
+    for sibling_path in "$HOME/.claude/projects-old" "$HOME/.claude/worktrees/feature"; do
+        result=$(HOME="$HOME" TARGET_PATH="$sibling_path" /bin/bash --noprofile --norc -c 'source "$PROJECT_ROOT/lib/core/common.sh"; should_protect_path "$TARGET_PATH" && echo "protected" || echo "not-protected"')
+        [ "$result" = "not-protected" ] || { echo "protected: $sibling_path"; return 1; }
     done
 }
 

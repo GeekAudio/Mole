@@ -38,8 +38,10 @@ jobs:
           git fetch upstream main --no-tags
           before=$(git rev-parse HEAD)
 
-          # 白名单：README.md 与 view.go 保留中文版；mole 只差版本号与标语一行。
-          known="README.md cmd/analyze/view.go mole"
+          # 白名单：README.md 与 view.go 保留中文版；mole 只差版本号与标语一行；
+          # release.yml 是本仓库的中文发布流程（workflow_dispatch + 中文标签）。
+          # 这四个文件只要冲突就按下面的固定规则解决，其余一律中止。
+          known="README.md cmd/analyze/view.go cmd/status/view.go .github/workflows/release.yml mole"
 
           if ! git merge --no-edit --no-ff upstream/main; then
             conflicts=$(git diff --name-only --diff-filter=U)
@@ -53,7 +55,11 @@ jobs:
               exit 1
             fi
 
-            for f in README.md cmd/analyze/view.go; do
+            # 界面与发布流程文件保留本仓库版本：
+            #   README.md / cmd/analyze/view.go / cmd/status/view.go —— 中文文案；
+            #   release.yml —— 中文发布流程，上游只升级 action 版本号，需人工跟进。
+            # view.go 的中文格式串若与上游新增参数对不上，下面的 go vet 会拦下。
+            for f in README.md cmd/analyze/view.go cmd/status/view.go .github/workflows/release.yml; do
               if printf '%s\n' $conflicts | grep -qxF "$f"; then
                 git checkout --ours -- "$f"
                 git add -- "$f"

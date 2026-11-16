@@ -226,6 +226,10 @@ declare -a SAFETY_WHITELIST_PATTERNS=(
     # default LLAMA_CACHE here; they are user-chosen models, not a cache that
     # rebuilds on its own. Mole Mac blocks the same folder (2026-10-29).
     "$HOME/Library/Caches/llama.cpp"
+    # Buzz keeps downloaded Whisper models (models/), installed plugins and
+    # the user's presentation CSS in its platformdirs cache folder, which its
+    # FAQ names as the place models live: user choices, not rebuildable cache.
+    "$HOME/Library/Caches/Buzz"
 )
 
 # Resolve the cache root used by GitHub CLI without following filesystem
@@ -1069,10 +1073,21 @@ bytes_to_human() {
     # MB: >= 1,000,000 bytes
     elif ((bytes >= 1000000)); then
         local scaled=$(((bytes * 10 + 500000) / 1000000))
-        printf "%d.%01dMB\n" $((scaled / 10)) $((scaled % 10))
+        if ((scaled >= 10000)); then
+            # Rounds up to 1000.0MB: print it as 1 GB, like the first GB value.
+            printf "1.00GB\n"
+        else
+            printf "%d.%01dMB\n" $((scaled / 10)) $((scaled % 10))
+        fi
     # KB: >= 1,000 bytes (round up to nearest KB instead of decimal)
     elif ((bytes >= 1000)); then
-        printf "%dKB\n" $(((bytes + 500) / 1000))
+        local kb=$(((bytes + 500) / 1000))
+        if ((kb >= 1000)); then
+            # Rounds up to 1000KB: print it as 1 MB, like the first MB value.
+            printf "1.0MB\n"
+        else
+            printf "%dKB\n" "$kb"
+        fi
     else
         printf "%dB\n" "$bytes"
     fi
@@ -1675,11 +1690,12 @@ cleanup_temp_files() {
 TRACK_SECTION=0
 SECTION_ACTIVITY=0
 
-# IMPORTANT: There are intentionally three start_section / end_section /
-# note_activity implementations across the codebase. The one that wins is the
-# one loaded last, and each variant has product-level differences (color,
-# fallback wording, dry-run export behavior). Before changing any of them,
-# read the cross references first:
+# IMPORTANT: There are intentionally three start_section / end_section
+# implementations across the codebase, and two note_activity ones (bin/clean.sh
+# uses this file's). The one that wins is the one loaded last, and each
+# variant has product-level differences (color, fallback wording, dry-run
+# export behavior). Before changing any of them, read the cross references
+# first:
 #
 #   - lib/core/base.sh   (this file): purple arrow header, "Nothing to tidy"
 #                                     fallback, no dry-run export.
@@ -1770,18 +1786,6 @@ safe_clear_lines() {
     # shellcheck disable=SC2059
     printf "$sequence" > "$tty_device" 2> /dev/null || return 1
 
-    return 0
-}
-
-# Safe single line clear with fallback
-# Usage: safe_clear_line [tty_device]
-safe_clear_line() {
-    local tty_device="${1:-/dev/tty}"
-
-    # Use centralized ANSI support check
-    is_ansi_supported 2> /dev/null || return 1
-
-    printf "\r\033[2K" > "$tty_device" 2> /dev/null || return 1
     return 0
 }
 
