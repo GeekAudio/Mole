@@ -52,6 +52,9 @@ jobs:
 
       - name: Run test script
         env:
+          # 中文版在 TTY 下把输出替换成中文，而测试断言的是上游英文文案，
+          # 所以测试环境关掉中文化（中文化本身由 lib/core/locale_zh_CN.sh 负责）。
+          MOLE_ZH_DISABLE: "1"
           # The perf cases now time a plain child shell, not the Bats DEBUG
           # trap, so these budgets can be tight enough to catch a new fork per
           # call while still leaving several times the local measurement.
@@ -120,6 +123,8 @@ jobs:
 
       - name: Run core bats subset
         env:
+          # 同 Run test script：断言是上游英文文案，这里关掉中文化。
+          MOLE_ZH_DISABLE: "1"
           MOLE_TEST_NO_AUTH: "1"
           MOLE_PERF_NORMALIZE_PATHS_LIMIT_MS: "10000"
           BATS_FORMATTER: tap
