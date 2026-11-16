@@ -209,7 +209,7 @@ INSTALLER
 	exit 0
 fi
 
-if [[ "\$url" == *"api.github.com/repos/tw93/mole/commits/main"* ]]; then
+if [[ "\$url" == *"api.github.com/repos/GeekAudio/Mole/commits/main"* ]]; then
 	printf '{"sha":"%s"}\n' "$latest_commit"
 	exit 0
 fi
@@ -500,8 +500,8 @@ SCRIPT
 	grep -q -- "--prefix" "$installer_args_log"
 	grep -q -- "$manual_bin" "$installer_args_log"
 	[ "$(cat "$installer_version_log")" = "V$current_version" ]
-	grep -q "raw.githubusercontent.com/tw93/mole/V${current_version#V}/install.sh" "$curl_url_log"
-	if grep -q "raw.githubusercontent.com/tw93/mole/main/install.sh" "$curl_url_log"; then
+	grep -q "raw.githubusercontent.com/GeekAudio/Mole/V${current_version#V}/install.sh" "$curl_url_log"
+	if grep -q "raw.githubusercontent.com/GeekAudio/Mole/main/install.sh" "$curl_url_log"; then
 		return 1
 	fi
 	if grep -q '^upgrade mole$' "$brew_log"; then
@@ -535,8 +535,8 @@ SCRIPT
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Already on latest nightly, e31d46f"* ]] || return 1
 	[ ! -e "$installer_args_log" ]
-	grep -q "api.github.com/repos/tw93/mole/commits/main" "$curl_url_log"
-	if grep -q "raw.githubusercontent.com/tw93/mole/main/install.sh" "$curl_url_log"; then
+	grep -q "api.github.com/repos/GeekAudio/Mole/commits/main" "$curl_url_log"
+	if grep -q "raw.githubusercontent.com/GeekAudio/Mole/main/install.sh" "$curl_url_log"; then
 		return 1
 	fi
 }
@@ -575,11 +575,11 @@ SCRIPT
 	[[ "$output" == *"Already on latest nightly, e31d46f"* ]] || return 1
 	[ ! -e "$installer_args_log" ] || return 1
 	[ ! -e "$git_poison_log" ] || return 1
-	grep -qF 'ls-remote https://github.com/tw93/mole.git refs/heads/main' "$git_args_log" || return 1
+	grep -qF 'ls-remote https://github.com/GeekAudio/Mole.git refs/heads/main' "$git_args_log" || return 1
 	[ "$(cat "$git_env_log")" = '0|/usr/bin/false|/usr/bin/false|1|/dev/null|0|C' ] || return 1
 	grep -qF -- '-c credential.helper= -c core.askPass=/usr/bin/false' "$git_args_log" || return 1
 	grep -qF -- '-c protocol.allow=never -c protocol.https.allow=always -c http.sslVerify=true -C /' "$git_args_log" || return 1
-	if grep -q 'raw.githubusercontent.com/tw93/mole/main/install.sh' "$curl_url_log"; then
+	if grep -q 'raw.githubusercontent.com/GeekAudio/Mole/main/install.sh' "$curl_url_log"; then
 		return 1
 	fi
 }
@@ -652,7 +652,7 @@ background_commit=$(get_latest_commit_from_github api-only)
 
 explicit_commit=$(get_latest_commit_from_github)
 [[ "$explicit_commit" == "$LATEST_COMMIT" ]] || exit 1
-grep -qF 'ls-remote https://github.com/tw93/mole.git refs/heads/main' "$GIT_ARGS_LOG"
+grep -qF 'ls-remote https://github.com/GeekAudio/Mole.git refs/heads/main' "$GIT_ARGS_LOG"
 
 get_install_channel() {
 	printf 'nightly\n'
@@ -707,8 +707,8 @@ INNER
 	[[ "$output" == *"Unable to resolve latest nightly commit"* ]] || return 1
 	[[ "$output" == *"mo update --nightly --force"* ]] || return 1
 	[ ! -e "$installer_args_log" ] || return 1
-	grep -qF 'ls-remote https://github.com/tw93/mole.git refs/heads/main' "$git_args_log" || return 1
-	if grep -q 'raw.githubusercontent.com/tw93/mole/main/install.sh' "$curl_url_log"; then
+	grep -qF 'ls-remote https://github.com/GeekAudio/Mole.git refs/heads/main' "$git_args_log" || return 1
+	if grep -q 'raw.githubusercontent.com/GeekAudio/Mole/main/install.sh' "$curl_url_log"; then
 		return 1
 	fi
 }
@@ -780,7 +780,7 @@ INNER
 	[ "$status" -eq 0 ] || return 1
 	[ -f "$installer_args_log" ] || return 1
 	[ "$(cat "$installer_commit_log")" = "$latest_commit" ] || return 1
-	grep -q 'raw.githubusercontent.com/tw93/mole/main/install.sh' "$curl_url_log" || return 1
+	grep -q 'raw.githubusercontent.com/GeekAudio/Mole/main/install.sh' "$curl_url_log" || return 1
 }
 
 @test "mo update --nightly --force reinstalls even when the installed commit is current" {
@@ -813,7 +813,7 @@ INNER
 	grep -q -- "--prefix" "$installer_args_log"
 	[ "$(cat "$installer_version_log")" = "main" ]
 	[ "$(cat "$installer_commit_log")" = "$latest_commit" ] || return 1
-	grep -q "raw.githubusercontent.com/tw93/mole/main/install.sh" "$curl_url_log"
+	grep -q "raw.githubusercontent.com/GeekAudio/Mole/main/install.sh" "$curl_url_log"
 }
 
 @test "mo update tells installer to reuse sudo after parent authentication" {
@@ -859,7 +859,7 @@ SCRIPT
 	[ -f "$installer_sudo_auth_log" ]
 	[ "$(cat "$installer_sudo_auth_log")" = "1" ]
 	grep -q -- "-n true" "$sudo_log"
-	grep -q "raw.githubusercontent.com/tw93/mole/V${current_version#V}/install.sh" "$curl_url_log"
+	grep -q "raw.githubusercontent.com/GeekAudio/Mole/V${current_version#V}/install.sh" "$curl_url_log"
 }
 
 @test "mo update aborts when the sudo session cannot reach the installer child" {
@@ -1257,7 +1257,7 @@ INSTALLER
 	exit 0
 fi
 
-if [[ "$url" == *"api.github.com/repos/tw93/mole/commits/main"* ]]; then
+if [[ "$url" == *"api.github.com/repos/GeekAudio/Mole/commits/main"* ]]; then
 	printf '{"sha":"%s"}\n' "$FALSE_SUCCESS_COMMIT"
 	exit 0
 fi
@@ -1416,7 +1416,7 @@ INSTALLER
 	exit 0
 fi
 
-if [[ "\$url" == *"api.github.com/repos/tw93/mole/commits/main"* ]]; then
+if [[ "\$url" == *"api.github.com/repos/GeekAudio/Mole/commits/main"* ]]; then
 	printf '{"sha":"%s"}\n' "$latest_commit"
 	exit 0
 fi
@@ -1653,7 +1653,7 @@ command() {
 	builtin command "$@"
 }
 wget() {
-	if [[ "$*" == *"api.github.com/repos/tw93/mole/commits/main"* ]]; then
+	if [[ "$*" == *"api.github.com/repos/GeekAudio/Mole/commits/main"* ]]; then
 		printf '{"sha":"%s"}\n' "$expected_commit"
 		return 0
 	fi
@@ -2010,7 +2010,7 @@ INNER
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/manage/update.sh"
-curl() { printf 'https://github.com/tw93/Mole/releases/tag/V9.8.7\n'; }
+curl() { printf 'https://github.com/GeekAudio/Mole/releases/tag/V9.8.7\n'; }
 [[ "$(get_latest_version)" == 9.8.7 ]] || exit 1
 SCRIPT
  [ "$status" -eq 0 ]
@@ -2164,7 +2164,7 @@ SCRIPT
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/manage/update.sh"
-curl() { echo 'https://raw.githubusercontent.com/tw93/mole/main/mole'; }
+curl() { echo 'https://raw.githubusercontent.com/GeekAudio/Mole/main/mole'; }
 [[ -z "$(get_latest_version)" ]] || exit 1
 curl() { echo '{"tag_name":"V1.60.0-beta.1"}'; }
 [[ -z "$(get_latest_version_from_github)" ]] || exit 1

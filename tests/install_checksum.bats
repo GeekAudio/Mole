@@ -1257,10 +1257,10 @@ set -euo pipefail
 mole_source_installer
 
 commit="0123456789abcdef0123456789abcdef01234567"
-[[ "$(source_archive_url main "$commit")" == "https://github.com/tw93/mole/archive/$commit.tar.gz" ]] || exit 1
-[[ "$(source_archive_url main "")" == "https://github.com/tw93/mole/archive/refs/heads/main.tar.gz" ]] || exit 1
-[[ "$(source_archive_url dev "")" == "https://github.com/tw93/mole/archive/refs/heads/dev.tar.gz" ]] || exit 1
-[[ "$(source_archive_url V1.2.3 "")" == "https://github.com/tw93/mole/archive/refs/tags/V1.2.3.tar.gz" ]] || exit 1
+[[ "$(source_archive_url main "$commit")" == "https://github.com/GeekAudio/Mole/archive/$commit.tar.gz" ]] || exit 1
+[[ "$(source_archive_url main "")" == "https://github.com/GeekAudio/Mole/archive/refs/heads/main.tar.gz" ]] || exit 1
+[[ "$(source_archive_url dev "")" == "https://github.com/GeekAudio/Mole/archive/refs/heads/dev.tar.gz" ]] || exit 1
+[[ "$(source_archive_url V1.2.3 "")" == "https://github.com/GeekAudio/Mole/archive/refs/tags/V1.2.3.tar.gz" ]] || exit 1
 EOF
 
 	[ "$status" -eq 0 ] || {
@@ -1321,7 +1321,7 @@ export GH_TRACE
 ( PATH="$stubdir:$PATH"; export STUB_AUTH_RC=0 STUB_VERIFY_RC=1; verify_release_attestation "$target" ) && rc=0 || rc=$?
 [ "$rc" -eq 1 ] || { echo "WRONG: verify-fail rc=$rc want 1"; exit 1; }
 
-grep -Fq "attestation verify $target --repo tw93/Mole --deny-self-hosted-runners" "$GH_TRACE" || {
+grep -Fq "attestation verify $target --repo GeekAudio/Mole --deny-self-hosted-runners" "$GH_TRACE" || {
     echo "WRONG: attestation verification was not repository-scoped"
     cat "$GH_TRACE"
     exit 1

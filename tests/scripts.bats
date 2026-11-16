@@ -285,7 +285,9 @@ BATS
     [[ "$go_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
     [[ "$release_minos" =~ ^[0-9]+\.[0-9]+$ ]] || return 1
     for requirements_doc in "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/CONTRIBUTING.md"; do
-        run grep -F "macOS $macos_major or newer" "$requirements_doc"
+        # README.md 是中文版，写的是「需要 macOS 12 或更高版本」；
+        # CONTRIBUTING.md 保留上游英文原文。
+        run grep -E "macOS $macos_major (or newer|或更高版本)" "$requirements_doc"
         [ "$status" -eq 0 ]
     done
     run grep -F "Go $go_major_minor+" "$PROJECT_ROOT/CONTRIBUTING.md"
@@ -426,7 +428,7 @@ EOF
     run env PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
 mole_source_installer
-[[ "$(source_archive_url dev "")" == "https://github.com/tw93/mole/archive/refs/heads/dev.tar.gz" ]]
+[[ "$(source_archive_url dev "")" == "https://github.com/GeekAudio/Mole/archive/refs/heads/dev.tar.gz" ]]
 EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     run /bin/bash -c "grep -q 'MOLE_VERSION=\"dev\"' '$PROJECT_ROOT/install.sh'"
