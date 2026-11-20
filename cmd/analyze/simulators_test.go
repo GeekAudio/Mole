@@ -215,7 +215,7 @@ func TestSimulatorViewFilterAndConfirmationKeepPath(t *testing.T) {
 		t.Fatal("confirmation lost the original device path")
 	}
 	view = ansi.Strip(m.View())
-	if !strings.Contains(view, "Move to Trash: iPhone Test · iOS 26.5 · 12345678") {
+	if !strings.Contains(view, "移至废纸篓： iPhone Test · iOS 26.5 · 12345678") {
 		t.Fatalf("confirmation does not identify the device:\n%s", view)
 	}
 }

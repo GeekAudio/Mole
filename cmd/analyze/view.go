@@ -383,9 +383,9 @@ func (m model) View() string {
 		} else {
 			selectCount := len(m.largeMultiSelected)
 			if selectCount > 0 {
-				fmt.Fprintf(&b, "%s↑↓ 移动 | 空格选择 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 %d 项 | Esc 返回 | Q 退出%s\n", colorGray, selectCount, colorReset)
+				fmt.Fprintf(&b, "%s↑↓ 移动 | 空格选择 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 %d 项 | Esc 返回 | Q/Ctrl+C 退出%s\n", colorGray, selectCount, colorReset)
 			} else {
-				fmt.Fprintf(&b, "%s↑↓ 移动 | 空格选择 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 | Esc 返回 | Q 退出%s\n", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s↑↓ 移动 | 空格选择 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 | Esc 返回 | Q/Ctrl+C 退出%s\n", colorGray, colorReset)
 			}
 		}
 	} else if m.entryFiltering {
@@ -397,15 +397,15 @@ func (m model) View() string {
 		selectCount := len(m.multiSelected)
 		if selectCount > 0 {
 			if largeFileCount > 0 {
-				fmt.Fprintf(&b, "%s↑↓←→ 移动 | 空格选择 | 回车打开 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 %d 项 | T 前 %d 项 | Esc 返回 | Q 退出%s\n", colorGray, selectCount, largeFileCount, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ 移动 | 空格选择 | 回车打开 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 %d 项 | T 前 %d 项 | Esc 返回 | Q/Ctrl+C 退出%s\n", colorGray, selectCount, largeFileCount, colorReset)
 			} else {
-				fmt.Fprintf(&b, "%s↑↓←→ 移动 | 空格选择 | 回车打开 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 %d 项 | Esc 返回 | Q 退出%s\n", colorGray, selectCount, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ 移动 | 空格选择 | 回车打开 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 %d 项 | Esc 返回 | Q/Ctrl+C 退出%s\n", colorGray, selectCount, colorReset)
 			}
 		} else {
 			if largeFileCount > 0 {
-				fmt.Fprintf(&b, "%s↑↓←→ 移动 | 空格选择 | 回车打开 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 | T 前 %d 项 | Esc 返回 | Q 退出%s\n", colorGray, largeFileCount, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ 移动 | 空格选择 | 回车打开 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 | T 前 %d 项 | Esc 返回 | Q/Ctrl+C 退出%s\n", colorGray, largeFileCount, colorReset)
 			} else {
-				fmt.Fprintf(&b, "%s↑↓←→ 移动 | 空格选择 | 回车打开 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 | Esc 返回 | Q 退出%s\n", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ 移动 | 空格选择 | 回车打开 | / 筛选 | R 刷新 | O 打开 | P 预览 | F 文件 | ⌫ 删除 | Esc 返回 | Q/Ctrl+C 退出%s\n", colorGray, colorReset)
 			}
 		}
 	}

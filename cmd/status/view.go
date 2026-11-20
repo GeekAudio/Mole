@@ -398,9 +398,12 @@ func processFreshnessLabel(stale *bool, collectedAt *time.Time, maxWidth int) st
 		base = "未知"
 	}
 	if maxWidth >= 0 && lipgloss.Width(base) > maxWidth {
+		if stale != nil && maxWidth >= lipgloss.Width("过期") {
+			return "过期"
+		}
 		return ""
 	}
-	if base == "UNKNOWN" || collectedAt == nil || collectedAt.IsZero() {
+	if stale == nil || collectedAt == nil || collectedAt.IsZero() {
 		return base
 	}
 	label := base + " " + collectedAt.Format(time.RFC3339)

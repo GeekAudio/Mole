@@ -489,7 +489,7 @@ func TestViewDeleteConfirmShowsUninstallHintForAppBundle(t *testing.T) {
 	if !strings.Contains(view, "mo uninstall Safari") {
 		t.Fatalf("expected app-specific uninstall command, got:\n%s", view)
 	}
-	if !strings.Contains(view, "only the bundle moves to Trash") {
+	if !strings.Contains(view, "这里只会将应用移至废纸篓") {
 		t.Fatalf("expected bundle-only warning, got:\n%s", view)
 	}
 }
@@ -521,7 +521,7 @@ func TestViewDeleteConfirmMultiSelectShowsGenericHint(t *testing.T) {
 	}
 
 	view := m.View()
-	if !strings.Contains(view, "mo uninstall <App>") {
+	if !strings.Contains(view, "mo uninstall <应用>") {
 		t.Fatalf("expected generic uninstall hint for multi-select containing an app bundle, got:\n%s", view)
 	}
 }
@@ -536,10 +536,10 @@ func TestViewShowsEscBackAndCtrlCQuitHints(t *testing.T) {
 	}
 
 	view := m.View()
-	if !strings.Contains(view, "Esc Back") {
+	if !strings.Contains(view, "Esc 返回") {
 		t.Fatalf("expected Esc Back hint in view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "Ctrl+C Quit") {
+	if !strings.Contains(view, "Ctrl+C 退出") {
 		t.Fatalf("expected Ctrl+C Quit hint in view, got:\n%s", view)
 	}
 }
@@ -563,7 +563,7 @@ func TestOverviewPendingSizeUsesScanningSpinner(t *testing.T) {
 	if strings.Contains(view, "pending") {
 		t.Fatalf("pending rows must not render a text placeholder, got:\n%s", view)
 	}
-	if !strings.Contains(view, fmt.Sprintf("%s scanning", spinnerFrames[0])) {
+	if !strings.Contains(view, fmt.Sprintf("%s 扫描中", spinnerFrames[0])) {
 		t.Fatalf("expected animated scanning placeholder for pending row, got:\n%s", view)
 	}
 }
@@ -582,7 +582,7 @@ func TestViewKeepsCachedEntriesWhileRefreshing(t *testing.T) {
 	if !strings.Contains(view, "warmed-child") {
 		t.Fatalf("expected cached entry to render during refresh, got:\n%s", view)
 	}
-	if !strings.Contains(view, "Showing cached results while refreshing") {
+	if !strings.Contains(view, "正在刷新，暂时显示缓存结果") {
 		t.Fatalf("expected refreshing hint during cached refresh, got:\n%s", view)
 	}
 }
@@ -604,10 +604,10 @@ func TestViewBlanksToScanOnlyWithoutWarmCache(t *testing.T) {
 	if strings.Contains(view, "stale-parent-row") {
 		t.Fatalf("expected scan-only view to hide stale entries, got:\n%s", view)
 	}
-	if strings.Contains(view, "Showing cached results while refreshing") {
+	if strings.Contains(view, "正在刷新，暂时显示缓存结果") {
 		t.Fatalf("did not expect cached-refresh hint without a warm cache, got:\n%s", view)
 	}
-	if !strings.Contains(view, "Scanning") {
+	if !strings.Contains(view, "正在扫描") {
 		t.Fatalf("expected scan-only view to show scanning progress, got:\n%s", view)
 	}
 }
@@ -621,7 +621,7 @@ func TestOverviewViewShowsFreeSpaceLabel(t *testing.T) {
 	}
 
 	view := m.View()
-	want := fmt.Sprintf("(%s free)", humanizeBytes(m.diskFree))
+	want := fmt.Sprintf("（剩余 %s）", humanizeBytes(m.diskFree))
 	if !strings.Contains(view, want) {
 		t.Fatalf("expected free-space label %q in overview view, got:\n%s", want, view)
 	}
@@ -2746,7 +2746,7 @@ func TestScanningViewRendersRowsWithSpinner(t *testing.T) {
 	if !strings.Contains(view, "child") || !strings.Contains(view, "file.txt") {
 		t.Fatalf("expected scanning view to render rows, got:\n%s", view)
 	}
-	if !strings.Contains(view, spinnerFrames[m.spinner]+" scanning") {
+	if !strings.Contains(view, spinnerFrames[m.spinner]+" 扫描中") {
 		t.Fatalf("expected pending directory spinner in row, got:\n%s", view)
 	}
 }
@@ -3504,16 +3504,16 @@ func TestDeleteViewHidesZeroTally(t *testing.T) {
 	m := model{deleting: true, deleteCount: &counter}
 
 	view := m.View()
-	if strings.Contains(view, "0 items") {
+	if strings.Contains(view, "0 个项目") {
 		t.Fatalf("expected no zero tally while nothing has completed, got:\n%s", view)
 	}
-	if !strings.Contains(view, "Moving to Trash") {
+	if !strings.Contains(view, "正在移至废纸篓") {
 		t.Fatalf("expected a progress line while deleting, got:\n%s", view)
 	}
 
 	atomic.StoreInt64(&counter, 2)
 	view = m.View()
-	if !strings.Contains(view, "2") || !strings.Contains(view, "items") {
+	if !strings.Contains(view, "2") || !strings.Contains(view, "个项目") {
 		t.Fatalf("expected the tally once paths completed, got:\n%s", view)
 	}
 }
@@ -3765,7 +3765,7 @@ func TestPartialScanViewRetainsUnavailableEntries(t *testing.T) {
 	m.multiSelected = map[string]bool{locked: true}
 	m.deleteTarget = &m.entries[1]
 	m.deleteConfirm = true
-	if !strings.Contains(m.View(), "locked, unknown") {
+	if !strings.Contains(m.View(), "locked，占用 unknown") {
 		t.Fatalf("confirmation pretended size was zero: %s", m.View())
 	}
 }
@@ -3949,7 +3949,7 @@ func TestSelectionAndConfirmationPreserveMeasurementCoverage(t *testing.T) {
 			}
 			updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyBackspace})
 			m = updated.(model)
-			if !strings.Contains(m.View(), "target, "+tc.label) {
+			if !strings.Contains(m.View(), "target，占用 "+tc.label) {
 				t.Fatalf("confirmation disagrees with selection: %s", m.View())
 			}
 			updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyEsc})
@@ -3966,7 +3966,7 @@ func TestSelectionAndConfirmationPreserveMeasurementCoverage(t *testing.T) {
 			}
 			updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyBackspace})
 			m = updated.(model)
-			if !strings.Contains(m.View(), "2 items, "+label) {
+			if !strings.Contains(m.View(), "2 个项目，占用 "+label) {
 				t.Fatalf("mixed confirmation disagrees with selection: %s", m.View())
 			}
 		})

@@ -607,19 +607,19 @@ func TestRenderBatteryCardShowsAdapterInputOnly(t *testing.T) {
 	if len(card.lines) != 4 {
 		t.Fatalf("expected compact 4-line power card, got %d lines:\n%s", len(card.lines), got)
 	}
-	if !strings.Contains(got, "Input") || !strings.Contains(got, "94W max") {
+	if !strings.Contains(got, "电源") || !strings.Contains(got, "94W 最大") {
 		t.Fatalf("expected input line with adapter max watts, got:\n%s", got)
 	}
-	if strings.Contains(got, "Draw") || strings.Contains(got, "Charge") {
+	if strings.Contains(got, "耗电") || strings.Contains(got, "充电") {
 		t.Fatalf("expected no live draw or charge watt row, got:\n%s", got)
 	}
-	if strings.Contains(got, "94W adapter") {
+	if strings.Contains(got, "94W 适配器") {
 		t.Fatalf("expected adapter watts only on the Input line, got:\n%s", got)
 	}
-	if !strings.Contains(got, "AC · Healthy · 4 cycles · 30.7°C") {
+	if !strings.Contains(got, "AC · 健康 · 4 次循环 · 30.7°C") {
 		t.Fatalf("expected compact AC health summary, got:\n%s", got)
 	}
-	if strings.Contains(got, "Battery 30.7°C") {
+	if strings.Contains(got, "电池 30.7°C") {
 		t.Fatalf("expected compact temperature without Battery prefix, got:\n%s", got)
 	}
 	if strings.Contains(got, "Ac") {
@@ -732,56 +732,56 @@ func TestFormatDiskLine(t *testing.T) {
 			name:         "empty label defaults to DISK",
 			label:        "",
 			disk:         DiskStatus{UsedPercent: 50.5, Used: 100 << 30, Total: 200 << 30},
-			wantUsed:     "100G used",
-			wantFree:     "100G free",
+			wantUsed:     "已用 100G",
+			wantFree:     "可用 100G",
 			wantNoSubstr: "%",
 		},
 		{
 			name:         "internal disk",
 			label:        "INTR",
 			disk:         DiskStatus{UsedPercent: 67.2, Used: 336 << 30, Total: 500 << 30},
-			wantUsed:     "336G used",
-			wantFree:     "164G free",
+			wantUsed:     "已用 336G",
+			wantFree:     "可用 164G",
 			wantNoSubstr: "%",
 		},
 		{
 			name:         "external disk",
 			label:        "EXTR1",
 			disk:         DiskStatus{UsedPercent: 85.0, Used: 850 << 30, Total: 1000 << 30},
-			wantUsed:     "850G used",
-			wantFree:     "150G free",
+			wantUsed:     "已用 850G",
+			wantFree:     "可用 150G",
 			wantNoSubstr: "%",
 		},
 		{
 			name:         "low usage",
 			label:        "INTR",
 			disk:         DiskStatus{UsedPercent: 15.3, Used: 15 << 30, Total: 100 << 30},
-			wantUsed:     "15G used",
-			wantFree:     "85G free",
+			wantUsed:     "已用 15G",
+			wantFree:     "可用 85G",
 			wantNoSubstr: "%",
 		},
 		{
 			name:         "used exceeds total clamps free to zero",
 			label:        "INTR",
 			disk:         DiskStatus{UsedPercent: 110.0, Used: 110 << 30, Total: 100 << 30},
-			wantUsed:     "110G used",
-			wantFree:     "0 free",
+			wantUsed:     "已用 110G",
+			wantFree:     "可用 0",
 			wantNoSubstr: "%",
 		},
 		{
 			name:         "purgeable space is excluded from immediate free space",
 			label:        "INTR",
 			disk:         DiskStatus{UsedPercent: 64.9, Used: 1226 << 30, Total: 1860 << 30, Purgeable: 141 << 30},
-			wantUsed:     "1T used",
-			wantFree:     "493G free",
+			wantUsed:     "已用 1T",
+			wantFree:     "可用 493G",
 			wantNoSubstr: "%",
 		},
 		{
 			name:         "purgeable exceeds available space clamps free to zero",
 			label:        "INTR",
 			disk:         DiskStatus{UsedPercent: 90, Used: 90 << 30, Total: 100 << 30, Purgeable: 20 << 30},
-			wantUsed:     "90G used",
-			wantFree:     "0 free",
+			wantUsed:     "已用 90G",
+			wantFree:     "可用 0",
 			wantNoSubstr: "%",
 		},
 	}
@@ -795,7 +795,7 @@ func TestFormatDiskLine(t *testing.T) {
 			}
 			expectedLabel := tt.label
 			if expectedLabel == "" {
-				expectedLabel = "DISK"
+				expectedLabel = "磁盘"
 			}
 			if !strings.Contains(got, expectedLabel) {
 				t.Errorf("formatDiskLine(%q, ...) = %q, should contain label %q", tt.label, got, expectedLabel)
@@ -826,8 +826,8 @@ func TestRenderDiskCardAddsMetaLineForSingleDisk(t *testing.T) {
 	}
 
 	meta := stripANSI(card.lines[1])
-	if meta != "Total  926G · APFS" {
-		t.Fatalf("renderDiskCard() single disk meta line = %q, want %q", meta, "Total  926G · APFS")
+	if meta != "总计  926G · APFS" {
+		t.Fatalf("renderDiskCard() single disk meta line = %q, want %q", meta, "总计  926G · APFS")
 	}
 }
 
@@ -841,8 +841,8 @@ func TestRenderDiskCardMetaLineShowsPurgeable(t *testing.T) {
 	}}, DiskIOStatus{}, 0, false)
 
 	meta := stripANSI(card.lines[1])
-	if meta != "Total  926G · APFS · 141G purgeable" {
-		t.Fatalf("renderDiskCard() meta line = %q, want %q", meta, "Total  926G · APFS · 141G purgeable")
+	if meta != "总计  926G · APFS · 141G 可清理" {
+		t.Fatalf("renderDiskCard() meta line = %q, want %q", meta, "总计  926G · APFS · 141G 可清理")
 	}
 }
 
@@ -857,7 +857,7 @@ func TestRenderDiskCardDoesNotAddMetaLineForMultipleDisks(t *testing.T) {
 	}
 
 	for _, line := range card.lines {
-		if stripANSI(line) == "Total  926G · APFS" || stripANSI(line) == "Total  1000G · APFS" {
+		if stripANSI(line) == "总计  926G · APFS" || stripANSI(line) == "总计  1000G · APFS" {
 			t.Fatalf("renderDiskCard() multiple disks should not add meta line, got %q", line)
 		}
 	}
@@ -881,10 +881,10 @@ func TestRenderDiskCardOmitsTrashFromMainView(t *testing.T) {
 			trashLine := ""
 			for _, line := range card.lines {
 				s := stripANSI(line)
-				if strings.HasPrefix(s, "I/O") {
+				if strings.HasPrefix(s, "读写") {
 					ioLine = s
 				}
-				if strings.HasPrefix(s, "Trash") {
+				if strings.HasPrefix(s, "废纸篓") {
 					trashLine = s
 				}
 			}
@@ -908,7 +908,7 @@ func TestRenderDiskCardUsesGraphicIOLine(t *testing.T) {
 	if len(card.lines) != 4 {
 		t.Fatalf("renderDiskCard() expected 4 lines without trash, got %d", len(card.lines))
 	}
-	if got := stripANSI(card.lines[3]); got != "I/O    ▯▯▯▯▯ R 0 · ▮▮▯▯▯ W 25 MB/s" {
+	if got := stripANSI(card.lines[3]); got != "读写     ▯▯▯▯▯ 读 0 · ▮▮▯▯▯ 写 25 MB/s" {
 		t.Fatalf("I/O line = %q", got)
 	}
 }
@@ -922,7 +922,7 @@ func TestRenderDiskCardShowsSMARTOnlyWhenFailing(t *testing.T) {
 		{UsedPercent: 20, Used: 20 << 30, Total: 100 << 30, External: true, SmartStatus: smartStatusUnsupported},
 	}, DiskIOStatus{}, 0, false)
 	for _, line := range healthy.lines {
-		if strings.Contains(stripANSI(line), "SMART") {
+		if strings.Contains(stripANSI(line), "磁盘健康") {
 			t.Fatalf("healthy disks should not render a SMART row, got %q", stripANSI(line))
 		}
 	}
@@ -935,14 +935,14 @@ func TestRenderDiskCardShowsSMARTOnlyWhenFailing(t *testing.T) {
 	}}, DiskIOStatus{}, 0, false)
 	var smartLine string
 	for _, line := range failing.lines {
-		if strings.Contains(stripANSI(line), "SMART") {
+		if strings.Contains(stripANSI(line), "磁盘健康") {
 			smartLine = stripANSI(line)
 		}
 	}
 	if smartLine == "" {
 		t.Fatal("a failing disk must still render a SMART row")
 	}
-	if !strings.Contains(smartLine, "Failing") || !strings.Contains(smartLine, "Back up now") {
+	if !strings.Contains(smartLine, "故障") || !strings.Contains(smartLine, "请立即备份") {
 		t.Fatalf("failing SMART row must name the state and the action, got %q", smartLine)
 	}
 }
@@ -954,8 +954,8 @@ func TestRenderDiskCardHighlightsFailingSMARTAndFitsNarrowWidth(t *testing.T) {
 	}, DiskIOStatus{}, 0, false)
 
 	smartLine := card.lines[2]
-	if !strings.Contains(smartLine, dangerStyle.Render("FAIL")) ||
-		!strings.Contains(smartLine, dangerStyle.Render("Back up now")) {
+	if !strings.Contains(smartLine, dangerStyle.Render("失败")) ||
+		!strings.Contains(smartLine, dangerStyle.Render("请立即备份")) {
 		t.Fatalf("failing SMART line lacks danger styling or backup hint: %q", smartLine)
 	}
 
@@ -966,9 +966,9 @@ func TestRenderDiskCardHighlightsFailingSMARTAndFitsNarrowWidth(t *testing.T) {
 			t.Fatalf("narrow disk card line exceeds %d columns: %q", narrowWidth, line)
 		}
 	}
-	if plain := stripANSI(rendered); !strings.Contains(plain, "Back up now") {
+	if plain := stripANSI(rendered); !strings.Contains(plain, "请立即备份") {
 		t.Fatalf("narrow disk card lost backup hint: %q", plain)
-	} else if !strings.Contains(plain, "FAIL") {
+	} else if !strings.Contains(plain, "内置 失败") {
 		t.Fatalf("narrow disk card lost failing status: %q", plain)
 	}
 }
@@ -1108,7 +1108,7 @@ func TestRenderHeaderErrorReturnsMoleOnce(t *testing.T) {
 	if mole != "" {
 		t.Fatalf("renderHeader() mole return should be empty on error to avoid duplicate render, got %q", mole)
 	}
-	if !strings.Contains(header, "ERROR: boom") {
+	if !strings.Contains(header, "错误：boom") {
 		t.Fatalf("renderHeader() missing error text, got %q", header)
 	}
 	if strings.Count(header, "/\\_/\\") != 1 {
@@ -1230,7 +1230,7 @@ func TestRenderProcessCardShowsCollectingWhenEmpty(t *testing.T) {
 	if len(card.lines) != 1 {
 		t.Fatalf("renderProcessCard() empty lines = %d, want 1", len(card.lines))
 	}
-	if got := stripANSI(card.lines[0]); got != "Collecting..." {
+	if got := stripANSI(card.lines[0]); got != "正在读取……" {
 		t.Fatalf("renderProcessCard() empty line = %q", got)
 	}
 }
@@ -1248,7 +1248,7 @@ func TestBuildCardsMarksStaleProcessSampleAtNarrowAndWideWidths(t *testing.T) {
 		cards := buildCards(snapshot, width, 0, true)
 		processCard := cards[4]
 		rendered := stripANSI(renderCard(processCard, width))
-		if !strings.Contains(rendered, "STALE") {
+		if !strings.Contains(rendered, "过期") {
 			t.Fatalf("process card width %d missing stale marker: %q", width, rendered)
 		}
 		if width >= 19 && !strings.Contains(rendered, "82.0%") {
@@ -1267,7 +1267,7 @@ func TestBuildCardsMarksUnknownProcessFreshness(t *testing.T) {
 
 	cards := buildCards(snapshot, 56, 0, true)
 	rendered := stripANSI(renderCard(cards[4], 56))
-	if !strings.Contains(rendered, "UNKNOWN") || !strings.Contains(rendered, "Xcode") {
+	if !strings.Contains(rendered, "未知") || !strings.Contains(rendered, "Xcode") {
 		t.Fatalf("unknown-freshness process card should label retained evidence: %q", rendered)
 	}
 }
@@ -1281,11 +1281,11 @@ func TestBuildCardsDistinguishesEmptyProcessSampleStates(t *testing.T) {
 		snapshot MetricsSnapshot
 		want     string
 	}{
-		{name: "fresh empty", snapshot: MetricsSnapshot{ProcessStale: &fresh}, want: "No process activity"},
-		{name: "fresh alert only", snapshot: MetricsSnapshot{ProcessStale: &fresh, ProcessAlerts: []ProcessAlert{{Status: "active"}}}, want: "No process rows · active alert above"},
-		{name: "stale empty", snapshot: MetricsSnapshot{ProcessStale: &stale}, want: "STALE · no retained process activity"},
-		{name: "stale measured zero", snapshot: MetricsSnapshot{ProcessStale: &stale, ZombieCount: &zero}, want: "STALE · no retained process activity"},
-		{name: "unknown retained alert", snapshot: MetricsSnapshot{ProcessAlerts: []ProcessAlert{{Status: "active"}}}, want: "UNKNOWN · process sample unavailable"},
+		{name: "fresh empty", snapshot: MetricsSnapshot{ProcessStale: &fresh}, want: "暂无进程活动"},
+		{name: "fresh alert only", snapshot: MetricsSnapshot{ProcessStale: &fresh, ProcessAlerts: []ProcessAlert{{Status: "active"}}}, want: "暂无进程记录 · 上方有活动告警"},
+		{name: "stale empty", snapshot: MetricsSnapshot{ProcessStale: &stale}, want: "数据过期 · 无可用进程活动记录"},
+		{name: "stale measured zero", snapshot: MetricsSnapshot{ProcessStale: &stale, ZombieCount: &zero}, want: "数据过期 · 无可用进程活动记录"},
+		{name: "unknown retained alert", snapshot: MetricsSnapshot{ProcessAlerts: []ProcessAlert{{Status: "active"}}}, want: "未知 · 无法读取进程信息"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1294,7 +1294,7 @@ func TestBuildCardsDistinguishesEmptyProcessSampleStates(t *testing.T) {
 			if !strings.Contains(rendered, tt.want) {
 				t.Fatalf("process state should render %q, got %q", tt.want, rendered)
 			}
-			if strings.Contains(rendered, "Collecting") {
+			if strings.Contains(rendered, "正在读取") {
 				t.Fatalf("known or retained process state should not look like initial collection, got %q", rendered)
 			}
 		})
@@ -1400,8 +1400,8 @@ func TestRenderHeaderUsesFastMetricSpecFallbacks(t *testing.T) {
 
 	header, _ := renderHeader(m, "", 0, 120, true)
 	plain := stripANSI(header)
-	wantRAM := "RAM " + humanBytes(ram)
-	wantDisk := "Disk " + humanBytes(diskSize)
+	wantRAM := "内存 " + humanBytes(ram)
+	wantDisk := "磁盘 " + humanBytes(diskSize)
 	if !strings.Contains(plain, wantRAM) || !strings.Contains(plain, wantDisk) {
 		t.Fatalf("renderHeader() should label fast metric specs %q and %q, got %q", wantRAM, wantDisk, plain)
 	}
@@ -1471,7 +1471,7 @@ func TestRenderHeaderKeepsLabeledSpecsOnCompactWidth(t *testing.T) {
 
 	header, _ := renderHeader(m, "", 0, 80, true)
 	plain := stripANSI(header)
-	if !strings.Contains(plain, "RAM 48G") || !strings.Contains(plain, "Disk 926GB") {
+	if !strings.Contains(plain, "内存 48G") || !strings.Contains(plain, "磁盘 926GB") {
 		t.Fatalf("renderHeader() compact width should keep labeled specs, got %q", plain)
 	}
 	if strings.Contains(plain, "48G/926GB") {
@@ -1544,10 +1544,10 @@ func TestRenderCPUCardKeepsOnlyTwoHotCores(t *testing.T) {
 	if len(card.lines) != 4 {
 		t.Fatalf("renderCPUCard() lines = %d, want 4", len(card.lines))
 	}
-	if strings.Count(plain, "Core") != 2 {
+	if strings.Count(plain, "\n核心") != 2 {
 		t.Fatalf("renderCPUCard() should render two core rows, got %q", plain)
 	}
-	if !strings.Contains(plain, "Core2") || !strings.Contains(plain, "Core3") {
+	if !strings.Contains(plain, "核心2") || !strings.Contains(plain, "核心3") {
 		t.Fatalf("renderCPUCard() should keep the two hottest cores, got %q", plain)
 	}
 }
@@ -1561,19 +1561,19 @@ func TestRenderCPUCardHonoursCoreCount(t *testing.T) {
 
 	// cpuCores = 0 means "all": every core gets a row.
 	all := stripANSI(strings.Join(renderCPUCard(cpu, ThermalStatus{}, 0).lines, "\n"))
-	if got := strings.Count(all, "Core"); got != 4 {
+	if got := strings.Count(all, "\n核心"); got != 4 {
 		t.Fatalf("cpuCores=0 should render all 4 cores, got %d rows: %q", got, all)
 	}
 
 	// A custom count lists exactly that many of the hottest cores.
 	three := stripANSI(strings.Join(renderCPUCard(cpu, ThermalStatus{}, 3).lines, "\n"))
-	if got := strings.Count(three, "Core"); got != 3 {
+	if got := strings.Count(three, "\n核心"); got != 3 {
 		t.Fatalf("cpuCores=3 should render 3 cores, got %d rows: %q", got, three)
 	}
 
 	// A count larger than the core total is clamped, not padded.
 	many := stripANSI(strings.Join(renderCPUCard(cpu, ThermalStatus{}, 99).lines, "\n"))
-	if got := strings.Count(many, "Core"); got != 4 {
+	if got := strings.Count(many, "\n核心"); got != 4 {
 		t.Fatalf("cpuCores=99 should clamp to 4 cores, got %d rows: %q", got, many)
 	}
 }
@@ -1628,7 +1628,7 @@ func TestViewShrinksCPUCardToFitHeight(t *testing.T) {
 	if got := lipgloss.Height(short.View()); got > 20 {
 		t.Fatalf("frame overflows a 20-line window: %d lines", got)
 	}
-	if strings.Count(stripANSI(short.View()), "Core") > 8 {
+	if strings.Count(stripANSI(short.View()), "\n核心") > 8 {
 		t.Error("short window should have stepped the core count down")
 	}
 }
@@ -1765,11 +1765,11 @@ func TestRenderMemoryCardHidesSwapSizeOnNarrowWidth(t *testing.T) {
 // Now that the level is real (#1963), normal is the usual answer, so only warn
 // and critical earn a line.
 func TestRenderMemoryCardShowsPressureOnlyWhenItNeedsAttention(t *testing.T) {
-	for pressure, want := range map[string]string{"": "", "normal": "", "warn": "Status warn", "critical": "Status critical"} {
+	for pressure, want := range map[string]string{"": "", "normal": "", "warn": "压力 偏高", "critical": "压力 严重"} {
 		card := renderMemoryCard(MemoryStatus{Used: 8 << 30, Total: 16 << 30, Available: 8 << 30, UsedPercent: 50, Pressure: pressure}, 60)
 		got := ""
 		for _, line := range card.lines {
-			if text := stripANSI(line); strings.HasPrefix(text, "Status") {
+			if text := stripANSI(line); strings.HasPrefix(text, "压力") {
 				got = text
 			}
 		}
@@ -1808,10 +1808,10 @@ func TestRenderMemoryCardUsesCollectedAvailableMemory(t *testing.T) {
 	}, 60)
 
 	plain := stripANSI(strings.Join(card.lines, "\n"))
-	if !strings.Contains(plain, "Free") || !strings.Contains(plain, "56.2%") {
+	if !strings.Contains(plain, "可用") || !strings.Contains(plain, "56.2%") {
 		t.Fatalf("renderMemoryCard() should derive free percent from Available, got %q", plain)
 	}
-	if !strings.Contains(plain, "Avail  9.0 GB") {
+	if !strings.Contains(plain, "剩余  9.0 GB") {
 		t.Fatalf("renderMemoryCard() should render collected Available memory, got %q", plain)
 	}
 }
@@ -1829,7 +1829,7 @@ func TestRenderMemoryCardCombinesCacheAndAvailable(t *testing.T) {
 	if len(card.lines) != 4 {
 		t.Fatalf("renderMemoryCard() lines = %d, want 4", len(card.lines))
 	}
-	if !strings.Contains(plain, "Cache  2.0 GB · Avail 9.0 GB") {
+	if !strings.Contains(plain, "缓存     2.0 GB · 可用 9.0 GB") {
 		t.Fatalf("renderMemoryCard() should combine cache and available memory, got %q", plain)
 	}
 }
@@ -1908,10 +1908,10 @@ func TestBatteryCardUnknownCapacityPreservesCycles(t *testing.T) {
 		capacity, cycles int
 		want             string
 	}{
-		{"capacity unavailable", 0, 100, "100 cycles"},
-		{"known healthy capacity", 98, 100, "Healthy"},
-		{"known worn capacity", 20, 50, "Service Soon"},
-		{"known cycle warning", 0, 1001, "Fair"},
+		{"capacity unavailable", 0, 100, "100 次循环"},
+		{"known healthy capacity", 98, 100, "健康"},
+		{"known worn capacity", 20, 50, "需要维护"},
+		{"known cycle warning", 0, 1001, "一般"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			card := renderBatteryCard([]BatteryStatus{{Percent: 50, Capacity: tc.capacity, CycleCount: tc.cycles, Status: "Discharging"}}, ThermalStatus{}, true)
@@ -1919,7 +1919,7 @@ func TestBatteryCardUnknownCapacityPreservesCycles(t *testing.T) {
 			if !strings.Contains(rendered, tc.want) {
 				t.Fatalf("missing %q in %q", tc.want, rendered)
 			}
-			if tc.capacity == 0 && strings.Contains(rendered, "Healthy") {
+			if tc.capacity == 0 && strings.Contains(rendered, "健康") {
 				t.Fatalf("unknown capacity rendered healthy: %q", rendered)
 			}
 			if strings.Contains(rendered, "·  ·") || strings.Contains(rendered, "· ·") {
@@ -1932,7 +1932,7 @@ func TestBatteryCardUnknownCapacityPreservesCycles(t *testing.T) {
 func TestBatteryCardUnknownCapacityKeepsSystemCondition(t *testing.T) {
 	card := renderBatteryCard([]BatteryStatus{{Percent: 50, CycleCount: 100, Health: "Service Recommended", Status: "Discharging"}}, ThermalStatus{}, true)
 	rendered := strings.Join(card.lines, "\n")
-	if !strings.Contains(rendered, "Service Recommended") || !strings.Contains(rendered, "100 cycles") || strings.Contains(rendered, "Healthy") {
+	if !strings.Contains(rendered, "Service Recommended") || !strings.Contains(rendered, "100 次循环") || strings.Contains(rendered, "健康") {
 		t.Fatalf("independent system condition or cycles lost: %q", rendered)
 	}
 }
