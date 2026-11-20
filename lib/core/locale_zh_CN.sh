@@ -11,6 +11,11 @@
 mole_zh_translate() {
     local text="${1:-}" pair source_text target_text
     local -a translations=(
+        'Skipped in this preview · |本次预览已跳过 · '
+        'Postman partition caches|Postman 分区缓存'
+        'Xcode documentation cache|Xcode 文档缓存'
+        'Xcode Simulator system cache|Xcode 模拟器系统缓存'
+        'skipped (sudo denied)|已跳过（未获管理员授权）'
         # --- 1.69.0 上游新增文案 ---
         'would prune, build cache unused for 7 days|将清理 7 天未使用的构建缓存'
         'would prune dangling images|将清理无标签镜像'

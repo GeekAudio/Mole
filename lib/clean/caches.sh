@@ -55,6 +55,7 @@ check_tcc_permissions() {
         echo -e "${GRAY}You may see ${GREEN}${#tcc_dirs[@]} permission dialogs${NC}${GRAY}, allow each one so these caches can be cleaned.${NC}"
         echo ""
         echo -ne "${PURPLE}${ICON_ARROW}${NC} Press ${GREEN}Enter${NC} to continue: "
+        mole_report_program_status blocked permission
         read -r
         MOLE_SPINNER_PREFIX="" start_inline_spinner "Requesting permissions..."
         # Touch each directory to trigger prompts without deep scanning.
@@ -62,6 +63,7 @@ check_tcc_permissions() {
             [[ -d "$dir" ]] && command find "$dir" -maxdepth 1 -type d > /dev/null 2>&1
         done
         stop_inline_spinner
+        mole_report_program_status working
         echo ""
     fi
     # Mark as granted to avoid repeat prompts.
@@ -110,6 +112,7 @@ clean_service_worker_cache() {
     fi
 
     local cleaned_size=0
+    local cleaned_count=0
     local protected_count=0
     local guard_stopped=false
     while IFS= read -r cache_dir; do
@@ -195,6 +198,7 @@ clean_service_worker_cache() {
                 [[ $remove_rc -eq 0 ]] || continue
             fi
             cleaned_size=$((cleaned_size + size))
+            cleaned_count=$((cleaned_count + 1))
         fi
     done < "$candidates_file"
     if [[ $cleaned_size -gt 0 ]]; then
@@ -216,6 +220,7 @@ clean_service_worker_cache() {
             else
                 echo -e "  ${line_color}${ICON_SUCCESS}${NC} $browser_name Service Worker${NC} · $(colorize_human_size "${cleaned_human}")"
             fi
+            mole_add_cleaned_row "$cleaned_count" "$cleaned_size"
         else
             echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $browser_name Service Worker, would clean $(colorize_human_size "$cleaned_human"), ${protected_count} protected"
         fi
@@ -386,10 +391,21 @@ _process_project_cache_scan_file() {
 # decides cheaply whether the root is walkable at all, so the per-root scan
 # budget is not spent on a root that can only fail. Readable cloud roots keep
 # the normal scan; an unreadable one is still counted as a skipped root.
+# Reaching depth two means listing every provider folder at depth one, so an
+# online-only provider (a signed-out drive) is pruned there, as the scan
+# itself does, instead of failing the probe for the whole root.
 project_cache_root_is_walkable() {
     local root="${1%/}"
     [[ "$root" == "$HOME/Library/CloudStorage" ]] || return 0
     local probe_timeout="$MOLE_TIMEOUT_QUICK_DETECT_SEC"
+    local dataless_rc=0
+    mole_find_knows_dataless || dataless_rc=$?
+    mole_rc_signal "$dataless_rc" && return "$dataless_rc"
+    if [[ $dataless_rc -eq 0 ]]; then
+        run_with_timeout "$probe_timeout" "$FIND_BSD" -P "$root" -maxdepth 2 \
+            -flags +dataless -prune -o -depth 2 -type d -print -quit < /dev/null > /dev/null 2>&1
+        return
+    fi
     run_with_timeout "$probe_timeout" "$FIND_BSD" -P "$root" -mindepth 2 -maxdepth 2 \
         -type d -print -quit < /dev/null > /dev/null 2>&1
 }
@@ -410,10 +426,17 @@ scan_project_cache_root() {
     # projects folder they can be half of the directories walked, enough to push
     # the scan past its timeout on a busy disk and skip the whole root. Leave
     # .tmp staging trees alone too: unreadable File Provider internals must not
-    # make an otherwise readable CloudStorage root fail its scan.
+    # make an otherwise readable CloudStorage root fail its scan. Online-only
+    # (dataless) folders are pruned too: entering one makes its File Provider
+    # fetch it, which pushed a streaming Google Drive past the budget (#2042).
+    local -a dataless_test=(-false)
+    local dataless_rc=0
+    mole_find_knows_dataless || dataless_rc=$?
+    mole_rc_signal "$dataless_rc" && return "$dataless_rc"
+    [[ $dataless_rc -ne 0 ]] || dataless_test=(-flags +dataless)
     local -a find_args=(
         "$FIND_BSD" -P "$root" -maxdepth 9 -mount
-        "(" -name "Library" -o -name ".Trash" -o -name "node_modules" -o -name ".tmp" -o -name ".git" -o -name ".svn" -o -name ".hg" -o -name ".venv" -o -name "venv" -o -name ".pnpm-store" -o -name ".fvm" -o -name "DerivedData" -o -name "Pods" -o -name "miniconda3" -o -name "anaconda3" -o -name "miniforge3" -o -name "mambaforge" -o -name "site-packages" -o -name "target" -o -name ".build" -o -name ".build-*" -o -name ".gradle" -o -name "Index.noindex" -o -name "_cacache" ")"
+        "(" -name "Library" -o -name ".Trash" -o -name "node_modules" -o -name ".tmp" -o -name ".git" -o -name ".svn" -o -name ".hg" -o -name ".venv" -o -name "venv" -o -name ".pnpm-store" -o -name ".fvm" -o -name "DerivedData" -o -name "Pods" -o -name "miniconda3" -o -name "anaconda3" -o -name "miniforge3" -o -name "mambaforge" -o -name "site-packages" -o -name "target" -o -name ".build" -o -name ".build-*" -o -name ".gradle" -o -name "Index.noindex" -o -name "_cacache" -o "${dataless_test[@]}" ")"
         -prune -o
         -type d
         "(" -name ".next" -o -name "__pycache__" -o -name ".dart_tool" ")"
@@ -734,7 +757,12 @@ _project_cache_final_guard() {
         repo="$MOLE_GIT_REPO_ROOT"
         [[ "$repo" != "$physical" ]] || return 1
         mole_git_path_spec "$repo" "$physical"
-        evidence=$(mole_git_ls_files "$repo" "$git_deadline" "$repo" -- "$MOLE_GIT_PATH_SPEC") || rc=$?
+        # Out here, not in the subshell below, so later guards reuse the answer.
+        mole_git_selected_developer_dir "$git_deadline" || rc=$?
+        [[ $rc -le 128 ]] || return "$rc"
+        if [[ $rc -eq 0 ]]; then
+            evidence=$(mole_git_ls_files "$repo" "$git_deadline" "$repo" -- "$MOLE_GIT_PATH_SPEC") || rc=$?
+        fi
         [[ $rc -le 128 ]] || return "$rc"
         if [[ $rc -ne 0 || -n "$evidence" ]]; then
             debug_log "Keeping project cache after Git recheck: $path (status $rc)"

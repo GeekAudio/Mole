@@ -25,8 +25,8 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      # 冲突分两类：白名单里的文件按固定规则自动解决，其余一律中止并报错。
-      # 白名单之外出现冲突，说明上游改了中文化真正依赖的代码，必须人工看。
+      # 工作流由 fork 单独维护。GITHUB_TOKEN 可以推送源码，但不能写工作流。
+      # README 沿用中文说明。仅自动解决版本标语的冲突，其他源码冲突留给维护者。
       - name: 合并上游主分支
         id: sync
         run: |
@@ -38,34 +38,29 @@ jobs:
           git fetch upstream main --no-tags
           before=$(git rev-parse HEAD)
 
-          # 白名单：README.md 与 view.go 保留中文版；mole 只差版本号与标语一行；
-          # release.yml 是本仓库的中文发布流程（workflow_dispatch + 中文标签）。
-          # 这四个文件只要冲突就按下面的固定规则解决，其余一律中止。
-          known="README.md cmd/analyze/view.go cmd/status/view.go .github/workflows/release.yml mole"
+          if ! git merge --no-edit --no-ff --no-commit upstream/main; then
+            # 非冲突错误不能当作一次成功的同步。
+            git rev-parse -q --verify MERGE_HEAD > /dev/null || exit 1
+          fi
+          if ! git rev-parse -q --verify MERGE_HEAD > /dev/null; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "上游没有新提交，无需同步。" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
 
-          if ! git merge --no-edit --no-ff upstream/main; then
-            conflicts=$(git diff --name-only --diff-filter=U)
-            unexpected=""
-            for f in $conflicts; do
-              printf '%s\n' $known | grep -qxF "$f" || unexpected="$unexpected $f"
-            done
-            if [[ -n "$unexpected" ]]; then
-              git merge --abort || true
-              echo "::error::上游更新与中文分支在以下文件冲突，已停止同步，请人工处理：$unexpected"
-              exit 1
-            fi
+          workflow_changes=$(git diff --cached --name-only "$before" -- .github/workflows/)
+          git restore --source="$before" --staged --worktree -- .github/workflows/ README.md
+          if [[ -n "$workflow_changes" ]]; then
+            printf '以下工作流沿用 fork 版本，请单独审阅上游改动：\n\n```\n%s\n```\n' "$workflow_changes" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
-            # 界面与发布流程文件保留本仓库版本：
-            #   README.md / cmd/analyze/view.go / cmd/status/view.go —— 中文文案；
-            #   release.yml —— 中文发布流程，上游只升级 action 版本号，需人工跟进。
-            # view.go 的中文格式串若与上游新增参数对不上，下面的 go vet 会拦下。
-            for f in README.md cmd/analyze/view.go cmd/status/view.go .github/workflows/release.yml; do
-              if printf '%s\n' $conflicts | grep -qxF "$f"; then
-                git checkout --ours -- "$f"
-                git add -- "$f"
-                echo "::notice::$f 冲突已保留本仓库的中文版本。"
-              fi
-            done
+          conflicts=$(git diff --name-only --diff-filter=U)
+          unexpected=$(printf '%s\n' "$conflicts" | grep -vxF mole || true)
+          if [[ -n "$unexpected" ]]; then
+            git merge --abort
+            echo "::error::上游更新与中文分支存在源码冲突，请人工处理：${unexpected//$'\n'/, }"
+            exit 1
+          fi
 
             # mole：版本号必须跟上游走，否则打出的中文标签是错的；标语保留中文。
             if printf '%s\n' $conflicts | grep -qxF "mole"; then
@@ -95,22 +90,15 @@ jobs:
               echo "::notice::mole 冲突已解决：版本号取上游 ${upstream_version}，标语保留中文。"
             fi
 
-            git commit --no-edit
-          fi
-
+          git diff --cached --quiet "$before" -- .github/workflows/ || exit 1
+          git commit --no-edit
           after=$(git rev-parse HEAD)
-          if [[ "$before" == "$after" ]]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "上游没有新提交，无需同步。" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
           # 只在这里完成本地合并，推送放到校验通过之后，
           # 否则校验失败时坏的合并已经进了 main，闸门等于没有。
           echo "changed=true" >> "$GITHUB_OUTPUT"
           echo "已在本地合并上游更新：\`$after\`，校验通过后才推送。" >> "$GITHUB_STEP_SUMMARY"
 
-      # 自动解冲突不能盲信：view.go 的中文格式串若与上游参数个数对不上，
-      # go vet 的 printf 检查会在这里拦下，不会推上去一个会打印 %!s(MISSING) 的版本。
+      # 即使 Git 自动合并成功，也要用 go vet 检查中文格式串和上游参数是否匹配。
       #
       # 必须交叉到 darwin 再 vet：cmd/analyze 整包（cache.go、scanner.go、view.go 等
       # 38 个文件）都带 //go:build darwin，而 runner 是 ubuntu。不指定 GOOS 时

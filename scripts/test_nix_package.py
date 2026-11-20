@@ -86,7 +86,7 @@ def main():
             stub.write_text('#!/bin/bash\nprintf "%s\\n" "$0" >> "$MOLE_SMOKE_FORBIDDEN"\nexit 97\n')
             stub.chmod(0o755)
         env = dict(os.environ, HOME=str(home), TERM="xterm-256color",
-                   MOLE_TEST_NO_AUTH="1", MOLE_SMOKE_FORBIDDEN=str(forbidden),
+                   MOLE_TEST_NO_AUTH="1", MOLE_ZH_DISABLE="1", MOLE_SMOKE_FORBIDDEN=str(forbidden),
                    PATH=f"{stubs}:/usr/bin:/bin:/usr/sbin:/sbin")
         for key in ("MOLE_TEST_MODE", "MOLE_SKIP_MAIN", "MOLE_NIX_INSTALL"):
             env.pop(key, None)
@@ -116,8 +116,8 @@ def main():
             assert history["sessions"] == [] and history["deletions"] == [], history
             analysis = json.loads(run(launcher, ["analyze", "--json", str(fixture)]))
             assert any(row["name"] == "sample.txt" for row in analysis["entries"]), analysis
-            run(launcher, ["analyze", "--help"], text="Usage:")
-            run(launcher, ["status", "--help"], text="Usage:")
+            run(launcher, ["analyze", "--help"], text="用法：mo analyze")
+            run(launcher, ["status", "--help"], text="用法：mo status")
             for args in (["update"], ["update", "--nightly"],
                          ["update", "--force"], ["remove"], ["remove", "--dry-run"]):
                 run(launcher, args, status=1, text="Nix")

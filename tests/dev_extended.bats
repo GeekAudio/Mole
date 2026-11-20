@@ -845,7 +845,8 @@ note_activity() { :; }
 is_path_whitelisted() { return 1; }
 should_protect_path() { return 1; }
 has_sudo_session() { return 1; }
-ensure_sudo_session() { touch "$HOME/xcode-started"; return 0; }
+mole_report_program_status() { echo "STATUS:$*"; }
+ensure_sudo_session() { echo AUTH; touch "$HOME/xcode-started"; return 0; }
 _sim_runtime_size_kb() { echo 1; }
 _xcode_xctest_devices_process_running() {
     [[ -e "$HOME/xcode-started" ]] && return 0
@@ -862,6 +863,7 @@ EOF
         echo "$output"
         return 1
     }
+    [[ "$output" == *$'STATUS:blocked auth\nAUTH\nSTATUS:working'* ]] || return 1
     [[ "$output" != *"Xcode documentation cache · stopped"* ]] || return 1
     [[ "$output" != *"UNEXPECTED_REMOVE"* ]]
 }
@@ -1081,16 +1083,24 @@ source "$PROJECT_ROOT/lib/clean/dev.sh"
 note_activity() { :; }
 pgrep() { return 1; }
 _coresimulator_booted_device_state() { return 1; }
-has_sudo_session() { return 0; }
+has_sudo_session() { [[ "$cached" == yes ]]; }
+mole_report_program_status() { echo "STATUS:$*"; }
+ensure_sudo_session() { echo AUTH; return 1; }
 is_path_whitelisted() { return 1; }
 should_protect_path() { return 1; }
 get_path_size_kb() { echo 3; }
 safe_sudo_remove() { echo "REMOVE:$1"; }
+cached=no
+clean_xcode_system_coresimulator_caches
+echo CACHED
+cached=yes
 clean_xcode_system_coresimulator_caches
 printf 'COUNTERS:%s:%s:%s\n' "$files_cleaned" "$total_size_cleaned" "$total_items"
 EOF
 
     [ "$status" -eq 0 ]
+    [[ "${output%%CACHED*}" == $'STATUS:blocked auth\nAUTH\nSTATUS:working\n'*"skipped (sudo denied)"* ]] || return 1
+    [[ "${output#*CACHED}" != *STATUS:* ]] || return 1
     [[ "$output" == *"REMOVE:$cache_root/dyld"* ]] || return 1
     [[ "$output" == *"REMOVE:$cache_root/metadata"* ]] || return 1
     [[ "$output"$'\n' != *"REMOVE:$cache_root"$'\n'* ]] || return 1
@@ -3043,6 +3053,64 @@ EOF
             fi
         fi
     done
+}
+
+@test "clean_dev_mobile adds removed unavailable simulators to the run totals (#2045)" {
+    # The row printed the measured bytes while Removed: never counted them,
+    # so the run total read less than this one row (#2039).
+    local udid="ABCDEF01-2345-6789-ABCD-EF0123456789"
+    local case_home="$HOME/simctl-delete-totals"
+    mkdir -p "$case_home/Library/Developer/CoreSimulator/Devices/$udid"
+
+    run env HOME="$case_home" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false \
+        MOLE_CURRENT_COMMAND=clean MOLE_CLEAN_CANCEL_STATUS=0 \
+        SIMCTL_DELETED="$case_home/simctl-deleted" \
+        /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+check_android_ndk() { :; }
+clean_xcode_documentation_cache() { :; }
+clean_xcode_system_coresimulator_caches() { :; }
+clean_xcode_xctest_devices() { :; }
+clean_xcode_device_support() { :; }
+safe_clean() { :; }
+get_path_size_kb() { echo "2048"; }
+note_activity() { :; }
+debug_log() { :; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+cleanup_result_color_kb() { printf '%s' "$GREEN"; }
+xcrun() { :; }
+_resolve_simctl_developer_dir() {
+    _MOLE_SIMCTL_DEVELOPER_DIR="$HOME/Xcode.app/Contents/Developer"
+    _MOLE_SIMCTL_RESOLUTION_STATUS="ready"
+}
+_run_simctl() {
+    shift
+    case "$*" in
+        "list devices unavailable")
+            [[ -e "$SIMCTL_DELETED" ]] ||
+                printf '    iPhone 12 (ABCDEF01-2345-6789-ABCD-EF0123456789) (Shutdown) (unavailable)\n'
+            return 0
+            ;;
+        "delete unavailable")
+            : > "$SIMCTL_DELETED"
+            return 0
+            ;;
+    esac
+    return 1
+}
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_dev_mobile
+printf 'TOTALS=%s:%s:%s\n' "$files_cleaned" "$total_size_cleaned" "$total_items"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Xcode unavailable simulators · removed 1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"TOTALS=1:2048:1"* ]] || { echo "$output"; return 1; }
 }
 
 @test "clean_dev_mobile names a macOS privacy refusal from simctl delete unavailable" {

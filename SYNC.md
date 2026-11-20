@@ -350,3 +350,43 @@ Source: Mole CLI (macOS), `3c4f01d8` (#2014). The Home measurement passes its in
 | Mole Mac | Pending | Source reading only, 2026-11-16 at `dcad0f80`: `DiskScanner.scan` sizes every top-level child with its own `makeTopLevelEntry` walk, and the `WalkedChild` comment in `DiskScanner.swift` states that a per-child re-walk gives each subtree its own dedup set, so a file hard-linked into two siblings counts in both; `testHarvestNavigationRechecksNestedChangesAndHardLinkSiblings` asserts exactly that for a drill, and `resolveParentEntryFromChildResult` lets a fully sized children sum replace the parent row. A harvested listing from the parent walk dedups correctly (`testRetryHarvestKeepsGlobalHardLinkAccounting`). Next check: a runtime test that scans a folder whose two children share a hard link and compares the listing total with `du -sk`, before deciding whether the per-row double count is a defect or the intended per-folder view. |
 
 The Mole for Windows consumer remains unverified in this task. Linux also pins `/usr/bin/gnudu` ahead of the uutils `du` (`66047153`, `TestFindDuBinaryPrefersGNUDuOverUutilsDu`).
+
+## 2026-11-19 Clean reports its state through OSC 7501
+
+Source: Mole CLI (macOS), `5bf0d49f` (#2041, a contributor PR, with #2040). `mo clean` writes `ESC ] 7501 ; state=<working|blocked|done|idle|error> : app=mole ST` to stderr only while stderr is a terminal (`lib/core/ui.sh:mole_report_program_status`): working at start, blocked while the sudo and Full Disk Access prompts wait, done on success, idle on Esc, Ctrl-C or SIGTERM, error on any other exit, once per run behind the existing `CLEANUP_DONE` guard. Terminals that do not know the sequence ignore it. CI on the merged head passed every job; locally the new PTY test passed and `tests/dev_extended.bats` failed only where `main` already fails on this Mac's Xcode state. This is a source change, not a verified package release.
+
+| Product | Status | Consumer and evidence |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented in source | `bin/clean.sh` (`main`, `cleanup`, `prompt_for_system_clean`), `lib/clean/caches.sh:check_tcc_permissions`, `lib/clean/dev.sh:_xcode_ensure_sudo_session`; `tests/clean_program_status_pty.py` through `tests/clean_core.bats`. |
+| Mole CLI (Windows) | Pending | At `bb4f2353` the `windows` branch writes no OSC 7501. A terminal feature, not a safety or correctness contract, so it does not transfer by itself. Next check: whether a Windows terminal reads OSC 7501 before porting it to `bin/clean.ps1`. |
+| Mole CLI (Linux) | Not applicable | Outside the four-product model; the `linux` branch follows only the two CLIs' safety and correctness fixes, and this is neither. |
+| Mole Mac | Not applicable | A GUI app with no terminal to report to. |
+| Mole for Windows | Not applicable | A GUI app with no terminal to report to. |
+
+## 2026-11-20 Clean totals, dry-run skips, flat bundles and online-only folders
+
+Source: Mole CLI (macOS). `63446600` (#2048) reads the size a real `brew cleanup` prints as freed and counts it in the run total; `abaa094a` (#2043) adds one dry-run summary line naming the families skipped because Xcode or Simulator was running; `f1621e48` (#2046) counts the six rows that print their own size in the run total; `bfd1e7b8` (#2044, fixes #2042) reads a flat bundle's root `Info.plist` only when it names a regular, non-link executable beside it, and prunes online-only (dataless) folders in the `~/Library/CloudStorage` project-cache walk; `eff45ab5` prunes them in that root's walkability probe as well.
+
+| Product | Status | Consumer and evidence |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented in source (`63446600`, `abaa094a`, `f1621e48`, `bfd1e7b8`, `eff45ab5`) | `lib/clean/brew.sh`, `bin/clean.sh`, `lib/core/bundle_resolver.sh:mole_flat_bundle_info_plist`, `lib/clean/apps.sh:scan_installed_apps`, `lib/clean/caches.sh:project_cache_root_is_walkable` and `scan_project_cache_root`; the `#2039`, `#2042`, `#2044`, `#2045` and `#2047` cases in `tests/`, each red on the previous code. Incidents I-88 to I-91. |
+| Mole Mac | Not applicable | Source reading on 2026-11-20. Homebrew old versions are chosen from `brew cleanup --dry-run` and removed and measured by the app itself, so there is no printed freed size to read. The dry-run line and the run total are CLI output. The orphan app-data scan walks a bundle that has no `Contents/Info.plist` and reads the root plist, and the App Group inventory skips absent `Contents` paths, so a flat bundle neither fails the inventory nor loses its id. The project-artifact walk already prunes dataless folders with materialization turned off. |
+| Mole CLI (Windows) | Not applicable; Intentional difference for the dry-run line | Homebrew and app bundles do not exist there. The rows that print their own size already add to the total (`lib/clean/dev.ps1`, `lib/clean/system.ps1`). `bin/purge.ps1` skips reparse points, which by inference covers OneDrive Files On-Demand folders; not measured. Caches skipped for a running owner stay silent in a dry run; adding the #2043 line there is a maintainer decision, recommended not now. |
+| Mole CLI (Linux) | Not applicable | Homebrew cleanup, app bundles, File Provider folders and the six counted rows are macOS sections; the `linux` branch has none of them. |
+| Mole for Windows | Not applicable | A GUI app; its comparison runs through Mole CLI (Windows) and Mole Mac. |
+
+## 2026-11-20 Analyze refuses session socket folders in the temp directory
+
+Source: Mole CLI (macOS) `90b3e1a8`, carrying Mole Mac I-289. `mo analyze` refuses moving `com.apple.launchd.*`, `tmux-<uid>`, `.X11-unix` and a hand-started ssh-agent's `ssh-` folder (10 or 12 alphanumerics) directly under `/private/tmp`, `/tmp` or a sane `$TMPDIR`, and anything inside them; the rest of the temp directory stays movable. Incident I-92.
+
+| Product | Status | Consumer and evidence |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented in source (`90b3e1a8`) | `cmd/analyze/delete.go:isSessionSocketFolderPath`; the session-socket cases in `cmd/analyze/delete_test.go`, red on the previous guard. |
+| Mole CLI (Linux) | Implemented in source (`81d4a2f7`) | Linux's names (`tmux-`, `ssh-`, `.X11-unix`, `.ICE-unix`) under `/tmp` or `$TMPDIR`, and `/tmp` itself refused; tests run on Debian 12 as a non-root user. |
+| Mole Mac | Implemented first (I-289) | Refuses the launchd, tmux and X11 folders in `/private/tmp`; the hand-started agent's `ssh-` folder is a CLI addition, recorded as a next check in the app's own record. |
+| Mole CLI (Windows) | Not applicable | No such socket folders on Windows. |
+| Mole for Windows | Not applicable | No such socket folders on Windows. |
+
+## 2026-11-20 GeekAudio 中文分支同步
+
+`GeekAudio/Mole` 的 Mole CLI (macOS) 合入 `tw93/Mole` 的 `3fd0005e`，版本为 1.73.0，包含该标签后的清理和磁盘分析补丁。保留中文 README、安装源和终端界面，并补充预览提示翻译。定时同步保留 fork 的工作流，涉及工作流的上游改动由维护者单独审阅。同期的桌面应用与其他平台 CLI 不在本次同步范围内。

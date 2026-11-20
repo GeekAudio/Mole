@@ -200,6 +200,27 @@ mole_git_repo_root() {
     printf '%s\n' "$MOLE_GIT_REPO_ROOT"
 }
 
+# The developer directory xcode-select names, kept in
+# MOLE_GIT_SELECTED_DEVELOPER_DIR without a subshell, so a shell and the
+# subshells it starts afterwards ask once instead of once per Git probe.
+# Only an answer is kept; a timeout or failure is asked again next time.
+# Nothing is asked when Git is not Apple's shim or DEVELOPER_DIR already names
+# the tools. A caller that runs probes in subshells calls this first, so they
+# all reuse one answer. Returns 0, 2 when xcode-select failed, 124 at the
+# deadline, or a signal status.
+MOLE_GIT_SELECTED_DEVELOPER_DIR=""
+mole_git_selected_developer_dir() {
+    local deadline="${1:-}" probe_timeout="" git_bin="" answer="" probe_rc=0
+    [[ -z "$MOLE_GIT_SELECTED_DEVELOPER_DIR" && -z "${DEVELOPER_DIR:-}" ]] || return 0
+    git_bin=$(command -v git) || return 0
+    [[ "$git_bin" == /usr/bin/git || "$git_bin" -ef /usr/bin/git ]] || return 0
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 124
+    answer=$(run_with_timeout "$probe_timeout" /usr/bin/xcode-select -p 2> /dev/null) || probe_rc=$?
+    [[ $probe_rc -le 128 ]] || return "$probe_rc"
+    [[ $probe_rc -eq 0 ]] || return 2
+    MOLE_GIT_SELECTED_DEVELOPER_DIR="$answer"
+}
+
 # Run a bounded `git ls-files` in a repository from directory $3. Inherited Git
 # routing and pathspec switches are ignored so the repository's own index
 # answers and fsmonitor hooks never run. Callers name a path with
@@ -212,16 +233,15 @@ mole_git_ls_files() {
     shift 3
     local probe_timeout=""
     probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 124
-    local git_bin developer_dir probe_rc=0
+    local git_bin developer_dir
     git_bin=$(command -v git) || return 2
     if [[ "$git_bin" == /usr/bin/git || "$git_bin" -ef /usr/bin/git ]]; then
         # The Apple shim opens the CLT installer when tools are absent. Resolve
         # the real binary without invoking either git or xcrun first.
         developer_dir="${DEVELOPER_DIR:-}"
         if [[ -z "$developer_dir" ]]; then
-            developer_dir=$(run_with_timeout "$probe_timeout" /usr/bin/xcode-select -p 2> /dev/null) || probe_rc=$?
-            [[ $probe_rc -le 128 ]] || return "$probe_rc"
-            [[ $probe_rc -eq 0 ]] || return 2
+            mole_git_selected_developer_dir "$deadline" || return $?
+            developer_dir="$MOLE_GIT_SELECTED_DEVELOPER_DIR"
         fi
         [[ "$developer_dir" != *.app ]] || developer_dir="$developer_dir/Contents/Developer"
         git_bin="$developer_dir/usr/bin/git"
@@ -266,6 +286,10 @@ mole_path_has_git_tracked_files() {
     repo=$(mole_git_repo_root "$path") || return 1
     local probe_rc=0
     mole_git_path_spec "$repo" "$path"
+    # Out here, not in the subshell below, so later probes reuse the answer.
+    mole_git_selected_developer_dir "$deadline" || probe_rc=$?
+    [[ $probe_rc -le 128 ]] || return "$probe_rc"
+    [[ $probe_rc -eq 0 ]] || return 2
     evidence=$(mole_git_ls_files "$repo" "$deadline" "$repo" -- "$MOLE_GIT_PATH_SPEC") || probe_rc=$?
     [[ $probe_rc -le 128 ]] || return "$probe_rc"
     [[ $probe_rc -eq 0 ]] || return 2
@@ -322,8 +346,27 @@ mole_purge_resolve_path_case() {
     fi
 }
 
+# Whether BSD find knows the dataless file flag (macOS 10.15 and later). The
+# answer is memoized per process; a signal during the probe is returned so the
+# caller can stop, and any other failure means "no", which keeps the old walk.
+mole_find_knows_dataless() {
+    if [[ -z "${_MOLE_FIND_KNOWS_DATALESS:-}" ]]; then
+        local probe_rc=0
+        run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" "${FIND_BSD:-/usr/bin/find}" / \
+            -maxdepth 0 -flags +dataless < /dev/null > /dev/null 2>&1 || probe_rc=$?
+        mole_rc_signal "$probe_rc" && return "$probe_rc"
+        if [[ $probe_rc -eq 0 ]]; then
+            _MOLE_FIND_KNOWS_DATALESS=yes
+        else
+            _MOLE_FIND_KNOWS_DATALESS=no
+        fi
+    fi
+    [[ "$_MOLE_FIND_KNOWS_DATALESS" == yes ]]
+}
+
 mole_purge_read_paths_config() {
     local config_file="${1:-$HOME/.config/mole/purge_paths}"
+    local path_mode="${2:-resolved}"
     [[ -f "$config_file" ]] || return 0
 
     local line
@@ -332,7 +375,10 @@ mole_purge_read_paths_config() {
         line="${line%"${line##*[![:space:]]}"}"
         [[ -z "$line" || "$line" =~ ^# ]] && continue
         line="${line/#\~/$HOME}"
-        line=$(mole_purge_resolve_path_case "$line")
+        # The read-only hint checks the dataless flag before entering a root.
+        if [[ "$path_mode" != literal ]]; then
+            line=$(mole_purge_resolve_path_case "$line")
+        fi
         printf '%s\n' "$line"
     done < "$config_file"
 }

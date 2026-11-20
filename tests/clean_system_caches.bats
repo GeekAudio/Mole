@@ -39,22 +39,35 @@ setup() {
     [[ ! -f "$HOME/.cache/mole/permissions_granted" ]]
 }
 
-@test "check_tcc_permissions skips when permissions already granted" {
-    mkdir -p "$HOME/.cache/mole"
-    touch "$HOME/.cache/mole/permissions_granted"
+@test "check_tcc_permissions reports blocked only while awaiting first-run permissions" {
+    if ! /usr/bin/script -q /dev/null /usr/bin/true < /dev/null > /dev/null 2>&1; then
+        skip "script cannot allocate a TTY in this environment"
+    fi
 
-    run /bin/bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; source '$PROJECT_ROOT/lib/clean/caches.sh'; [[ -t 1 ]] || true; check_tcc_permissions"
+    local trace="$BATS_TEST_TMPDIR/tcc-status"
+    # shellcheck disable=SC2016  # bash running under the PTY expands the fixture paths
+    TRACE="$trace" /usr/bin/script -q /dev/null /bin/bash --noprofile --norc -c '
+        source "$PROJECT_ROOT/lib/core/common.sh"
+        source "$PROJECT_ROOT/lib/clean/caches.sh"
+        mole_report_program_status() { echo "$*" >> "$TRACE"; }
+        ls() { return 1; }
+        read() { echo read >> "$TRACE"; }
+        start_inline_spinner() { echo requesting >> "$TRACE"; }
+        stop_inline_spinner() { echo requested >> "$TRACE"; }
+
+        check_tcc_permissions > /dev/null
+        echo interactive >> "$TRACE"
+        check_tcc_permissions
+        check_tcc_permissions  # The successful preflight left its flag.
+        rm -f "$HOME/.cache/mole/permissions_granted"
+        ls() { return 0; }
+        check_tcc_permissions  # All directories were already accessible.
+        echo finished >> "$TRACE"
+    ' < /dev/null > /dev/null
+
+    run cat "$trace"
     [ "$status" -eq 0 ]
-}
-
-@test "check_tcc_permissions validates protected directories" {
-
-    [[ -d "$HOME/Library/Caches" ]] || return 1
-    [[ -d "$HOME/Library/Logs" ]] || return 1
-    [[ -d "$HOME/.cache/mole" ]] || return 1
-
-    run /bin/bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; source '$PROJECT_ROOT/lib/clean/caches.sh'; check_tcc_permissions < /dev/null"
-    [ "$status" -eq 0 ]
+    [[ "$output" == $'interactive\nblocked permission\nread\nrequesting\nrequested\nworking\nfinished' ]]
 }
 
 @test "clean_service_worker_cache returns early when path doesn't exist" {
@@ -298,6 +311,40 @@ EOF
 
     [ "$status" -eq 0 ] || return 1
     [[ "$output" != *"TestBrowser Service Worker"* ]]
+}
+
+@test "clean_service_worker_cache adds removed caches to the run totals (#2045)" {
+    local test_cache="$HOME/test_sw_cache_totals"
+    mkdir -p "$test_cache/origin_a/cache_one" "$test_cache/origin_b/cache_two"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" CACHE="$test_cache" \
+        /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+DRY_RUN=false
+declare -a PROTECTED_SW_DOMAINS=("never.invalid")
+safe_remove() { return 0; }
+note_activity() { :; }
+run_with_timeout() {
+    shift
+    if [[ "$1" == "du" ]]; then
+        printf '512\t%s\n' "$3"
+        return 0
+    fi
+    "$@"
+}
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_service_worker_cache TestBrowser "$CACHE"
+printf 'TOTALS=%s:%s:%s\n' "$files_cleaned" "$total_size_cleaned" "$total_items"
+EOF
+
+    rm -rf "$test_cache"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"TestBrowser Service Worker"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"TOTALS=2:1024:1"* ]] || { echo "$output"; return 1; }
 }
 
 @test "clean_service_worker_cache checks its guard after sizing before dry-run registration" {
@@ -1942,6 +1989,137 @@ EOF
 	[[ "$result" == STATUS=124*" BYTES=0" ]] || return 1
 	[[ "$elapsed" =~ ^[0-9]+$ ]] || return 1
 	((elapsed < 4))
+}
+
+@test "mole_find_knows_dataless memoizes the answer and passes a signal through (#2042)" {
+    run env HOME="$BATS_TEST_TMPDIR/dataless-probe" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+mkdir -p "$HOME"
+cat > "$HOME/find" <<'SCRIPT'
+#!/bin/bash
+printf 'call\n' >> "$HOME/calls"
+exit "$(cat "$HOME/answer")"
+SCRIPT
+chmod +x "$HOME/find"
+FIND_BSD="$HOME/find"
+calls() { wc -l < "$HOME/calls" | tr -d ' '; }
+
+echo 0 > "$HOME/answer"
+mole_find_knows_dataless || exit 1
+echo 1 > "$HOME/answer"
+mole_find_knows_dataless || exit 1
+[[ "$(calls)" == 1 ]] || { echo "NOT_MEMOIZED"; exit 1; }
+
+unset _MOLE_FIND_KNOWS_DATALESS
+if mole_find_knows_dataless; then exit 1; fi
+[[ "$_MOLE_FIND_KNOWS_DATALESS" == no ]] || exit 1
+
+unset _MOLE_FIND_KNOWS_DATALESS
+echo 130 > "$HOME/answer"
+rc=0
+mole_find_knows_dataless || rc=$?
+[[ $rc -eq 130 && -z "${_MOLE_FIND_KNOWS_DATALESS:-}" ]] || { echo "SIGNAL rc=$rc"; exit 1; }
+printf 'PROBE_OK\n'
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *PROBE_OK* ]]
+}
+
+@test "scan_project_cache_root prunes online-only folders before entering them (#2042)" {
+    run env HOME="$BATS_TEST_TMPDIR/dataless-home" PROJECT_ROOT="$PROJECT_ROOT" LC_ALL=C /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+root="$HOME/Library/CloudStorage"
+drive="$root/GoogleDrive-test"
+mkdir -p "$drive/local-app/__pycache__" "$drive/OnlineOnly/app/__pycache__"
+touch "$drive/local-app/pyproject.toml" "$drive/local-app/__pycache__/module.pyc" \
+    "$drive/OnlineOnly/app/pyproject.toml" "$drive/OnlineOnly/app/__pycache__/module.pyc"
+# Ordinary fixtures cannot carry the File Provider flag, so run BSD find with
+# the flag predicate answered by the fixture's name.
+cat > "$HOME/find" <<'SCRIPT'
+#!/bin/bash
+args=()
+while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "-flags" && "$2" == "+dataless" ]]; then
+        args+=(-name OnlineOnly)
+        shift 2
+    else
+        args+=("$1")
+        shift
+    fi
+done
+exec /usr/bin/find "${args[@]}"
+SCRIPT
+chmod +x "$HOME/find"
+FIND_BSD="$HOME/find"
+
+_MOLE_FIND_KNOWS_DATALESS=yes
+scan_project_cache_root "$root" "$HOME/pruned"
+grep -Fxq "$drive/local-app"$'\t'"$drive/local-app/__pycache__" "$HOME/pruned" || exit 1
+! grep -Fq OnlineOnly "$HOME/pruned" || exit 1
+
+# A find without the flag keeps the previous walk, which enters the folder.
+_MOLE_FIND_KNOWS_DATALESS=no
+scan_project_cache_root "$root" "$HOME/unpruned"
+grep -Fxq "$drive/OnlineOnly/app"$'\t'"$drive/OnlineOnly/app/__pycache__" "$HOME/unpruned" || exit 1
+printf 'DATALESS_PRUNED\n'
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *DATALESS_PRUNED* ]]
+}
+
+@test "CloudStorage probe prunes an online-only provider instead of failing the root (#2044)" {
+    [[ "$EUID" -ne 0 ]] || skip "root can read mode-000 directories"
+
+    run env HOME="$BATS_TEST_TMPDIR/dataless-probe-home" PROJECT_ROOT="$PROJECT_ROOT" LC_ALL=C /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+root="$HOME/Library/CloudStorage"
+offline="$root/AOffline-provider"
+# The local provider holds no folder, so the probe cannot quit early before
+# reaching the offline one, whatever order the providers are listed in.
+mkdir -p "$offline/hidden" "$root/GoogleDrive-local"
+trap 'chmod 700 "$offline"' EXIT
+chmod 000 "$offline"
+# Answer the flag predicate by name; the unreadable folder models a signed-out
+# provider whose listing fails if find enters it.
+cat > "$HOME/find" <<'SCRIPT'
+#!/bin/bash
+args=()
+while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "-flags" && "$2" == "+dataless" ]]; then
+        args+=(-name AOffline-provider)
+        shift 2
+    else
+        args+=("$1")
+        shift
+    fi
+done
+exec /usr/bin/find "${args[@]}"
+SCRIPT
+chmod +x "$HOME/find"
+FIND_BSD="$HOME/find"
+
+_MOLE_FIND_KNOWS_DATALESS=yes
+project_cache_root_is_walkable "$root" || { echo "PRUNED_PROBE_FAILED"; exit 1; }
+
+# Without the flag the probe enters the provider and fails, as before.
+_MOLE_FIND_KNOWS_DATALESS=no
+if project_cache_root_is_walkable "$root"; then
+    echo "UNPRUNED_PROBE_PASSED"
+    exit 1
+fi
+printf 'PROBE_PRUNED\n'
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *PROBE_PRUNED* ]]
 }
 
 @test "scan_project_cache_root prunes provider temp folders but keeps readable CloudStorage projects (#1988)" {

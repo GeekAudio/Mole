@@ -165,6 +165,82 @@ EOF
     [[ "$output" != *UNEXPECTED_GIT_SHIM* ]]
 }
 
+@test "purge Git probes ask xcode-select once and never keep a failed answer" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+unset DEVELOPER_DIR
+mkdir -p "$HOME/repo/.git" "$HOME/repo/build" "$HOME/repo/dist" "$HOME/dev/usr/bin"
+printf '#!/bin/sh\nexit 0\n' > "$HOME/dev/usr/bin/git"
+chmod +x "$HOME/dev/usr/bin/git"
+command() {
+    if [[ "$*" == '-v git' ]]; then echo /usr/bin/git; else builtin command "$@"; fi
+}
+xcode_select_state=fail
+run_with_timeout() {
+    shift
+    case "$1" in
+        /usr/bin/xcode-select)
+            echo asked >> "$HOME/xcode-select.calls"
+            [[ "$xcode_select_state" == ok ]] || return 1
+            echo "$HOME/dev"
+            ;;
+        *) "$@" ;;
+    esac
+}
+rc=0
+mole_path_has_git_tracked_files "$HOME/repo/build" || rc=$?
+[[ $rc -eq 2 ]] || exit 1
+xcode_select_state=ok
+for path in build dist build; do
+    rc=0
+    mole_path_has_git_tracked_files "$HOME/repo/$path" || rc=$?
+    [[ $rc -eq 1 ]] || exit 1
+done
+(mole_git_ls_files "$HOME/repo" '' "$HOME/repo" > /dev/null) || exit 1
+wc -l < "$HOME/xcode-select.calls" | tr -d ' '
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ "$output" = "2" ]
+}
+
+@test "purge filter asks xcode-select once for its workers and never without a repository" {
+    # Outside the checkout, so plain/build is not inside Mole's own repository.
+    local filter_home="$BATS_TEST_TMPDIR/filter-home"
+    mkdir -p "$filter_home"
+    run env HOME="$filter_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+unset DEVELOPER_DIR
+mkdir -p "$HOME/repo/.git" "$HOME/repo/a" "$HOME/repo/b" "$HOME/repo/c" "$HOME/plain/build"
+command() {
+    if [[ "$*" == '-v git' ]]; then echo /usr/bin/git; else builtin command "$@"; fi
+}
+run_with_timeout() {
+    shift
+    case "$1" in
+        /usr/bin/xcode-select) echo asked >> "$HOME/xcode-select.calls"; echo "$HOME/dev" ;;
+        *) "$@" ;;
+    esac
+}
+_purge_take_lsof_snapshots() { :; }
+is_protected_purge_artifact() {
+    # Like the real probe, only a path inside a repository asks.
+    if mole_find_git_repo_root "$1"; then mole_git_selected_developer_dir ''; fi
+    return 1
+}
+calls() { [[ -f "$HOME/xcode-select.calls" ]] && wc -l < "$HOME/xcode-select.calls" | tr -d ' ' || echo 0; }
+: | filter_protected_artifacts > /dev/null
+printf '%s\n' "$HOME/plain/build" | filter_protected_artifacts > /dev/null
+echo "outside=$(calls)"
+printf '%s\n' "$HOME/repo/a" "$HOME/repo/b" "$HOME/repo/c" | filter_protected_artifacts > /dev/null
+echo "repo=$(calls)"
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"outside=0"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"repo=1"* ]]
+}
+
 @test "purge node_modules requires an install record and preserves modified packages" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -4013,7 +4089,9 @@ EOF_REPEAT_TERM
 
 
 @test "activity batch parent TERM drains real timeout probes and their children" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF_PROCESS'
+    local fixture
+    fixture=$(mktemp -d "$HOME/activity-term.XXXXXX")
+    run env HOME="$fixture" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF_PROCESS'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/clean/project.sh"
 purge_node_modules_is_protected() { return 1; }
@@ -4026,40 +4104,44 @@ PURGE_SEARCH_PATHS=("$HOME/www")
 scan_purge_targets() { printf '%s\n' "$HOME/www/"{a-first,b-peer,c-later}/node_modules > "$2"; }
 purge_artifact_has_authored_content() { return 1; }
 get_optimal_parallel_jobs() { echo 2; }
-get_dir_size_kb() { echo SIZE_PHASE_REACHED >&2; echo 1; }
-safe_remove() { echo UNEXPECTED_REMOVE; }
+get_dir_size_kb() { : > "$HOME/activity-size-reached"; echo 1; }
+safe_remove() { : > "$HOME/activity-remove-reached"; }
 register_temp_file() { printf '%s\n' "$1" >> "$HOME/activity-results"; }
 mkdir -p "$HOME/activity-bin"
 cat > "$HOME/activity-bin/find" <<'EOF_FIND'
 #!/bin/bash
-[[ "$1" != *c-later* ]] || { echo LATER_PROBE_REACHED >&2; exit 2; }
+if [[ "$1" == */c-later/node_modules ]]; then
+    : > "$HOME/activity-later-probed"
+    exit 0
+fi
 sleep 10 & child=$!
-printf '%s %s\n' "$$" "$child" >> "$HOME/activity-processes"
 cleanup() { kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; }
 trap 'cleanup; exit 143' TERM
 trap 'cleanup; exit 130' INT
+printf '%s %s\n' "$$" "$child" >> "$HOME/activity-processes"
+# Signal from the bounded probe once both children are ready, without
+# charging the discovery and protection phases against a sender deadline.
+if [[ "$1" == */b-peer/node_modules ]]; then
+    until [[ -f "$HOME/activity-first-ready" ]]; do sleep 0.02; done
+    kill -TERM "$PURGE_ACTIVITY_TEST_PID"
+else
+    : > "$HOME/activity-first-ready"
+fi
 wait "$child"
 EOF_FIND
 chmod +x "$HOME/activity-bin/find"
 export PATH="$HOME/activity-bin:$PATH" MOLE_DRY_RUN=1
 export MO_PURGE_ACTIVITY_TIMEOUT_SEC=1 MO_PURGE_ACTIVITY_TOTAL_TIMEOUT_SEC=3
+export PURGE_ACTIVITY_TEST_PID=$$
 trap 'echo CALLER_TERM' TERM
 caller_trap=$(trap -p TERM)
-(
-    for ((n=0; n<100; n++)); do
-        if [[ -f "$HOME/activity-processes" && $(wc -l < "$HOME/activity-processes") -ge 2 ]]; then
-            kill -TERM "$$"
-            exit 0
-        fi
-        sleep 0.02
-    done
-    exit 1
-) & sender=$!
 result=0
 clean_project_artifacts </dev/null || result=$?
-wait "$sender"
+printf 'RESULT=%s OUTCOME=%s\n' "$result" "$PURGE_RUN_OUTCOME"
 [[ "$result" -eq 143 && "$PURGE_RUN_OUTCOME" == cancelled ]] || exit 1
 [[ "$(trap -p TERM)" == "$caller_trap" ]] || exit 1
+[[ -f "$HOME/activity-processes" && $(wc -l < "$HOME/activity-processes") -eq 2 ]] || exit 1
+[[ ! -e "$HOME/activity-later-probed" && ! -e "$HOME/activity-size-reached" && ! -e "$HOME/activity-remove-reached" ]] || exit 1
 while read -r probe_pid child_pid; do
     ! kill -0 "$probe_pid" 2>/dev/null || exit 1
     ! kill -0 "$child_pid" 2>/dev/null || exit 1
@@ -4069,7 +4151,7 @@ printf 'DRAINED_REAL_PROBES\n'
 EOF_PROCESS
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *DRAINED_REAL_PROBES* ]] || return 1
-    [[ "$output" != *SIZE_PHASE_REACHED* && "$output" != *LATER_PROBE_REACHED* && "$output" != *UNEXPECTED_REMOVE* && "$output" != *CALLER_TERM* ]] || return 1
+    [[ "$output" != *CALLER_TERM* ]] || return 1
 }
 
 

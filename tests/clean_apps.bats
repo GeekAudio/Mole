@@ -3078,6 +3078,66 @@ EOF
     [[ "$output" != *"UNEXPECTED_LAUNCHCTL"* ]]
 }
 
+@test "clean_orphaned_system_services adds the removed services to the run totals (#2045)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 DRY_RUN=false MOLE_DRY_RUN=0 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { :; }
+bundle_has_installed_app() { return 1; }
+safe_sudo_remove() { return 0; }
+
+tmp_dir="$(mktemp -d)"
+tmp_helper="$tmp_dir/org.amnezia.awg.plist"
+cat > "$tmp_helper" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>org.amnezia.awg</string>
+    <key>Program</key>
+    <string>$tmp_dir/missing-binary</string>
+</dict>
+</plist>
+PLIST
+
+sudo() {
+  if [[ "$1" == "-n" && "$2" == "true" ]]; then
+    return 0
+  fi
+  [[ "${1:-}" == "-n" ]] && shift
+  if [[ "$1" == "find" ]]; then
+    case "$2" in
+      /Library/LaunchDaemons) printf '%s\0' "$tmp_helper" ;;
+      *) : ;;
+    esac
+    return 0
+  fi
+  if [[ "$1" == "du" ]]; then
+    echo "4 $tmp_helper"
+    return 0
+  fi
+  if [[ "$1" == "launchctl" ]]; then echo "UNEXPECTED_LAUNCHCTL"; return 99; fi
+  command "$@"
+}
+
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_orphaned_system_services
+printf 'TOTALS=%s:%s:%s\n' "$files_cleaned" "$total_size_cleaned" "$total_items"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Orphaned services · cleaned 1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"TOTALS=1:4:1"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_orphaned_system_services keeps a live helper app LaunchDaemon loaded (#1447)" {
     # Chrome Remote Desktop installs its broker inside a standalone .app under
     # PrivilegedHelperTools rather than inside a parent app in /Applications.
@@ -4442,6 +4502,68 @@ EOF
 		echo "$output"
 		return 1
 	}
+}
+
+@test "installed-app scan reads a flat bundle with its executable and fails closed on other flat layouts (#2044)" {
+    run env HOME="$HOME/flat-bundle-scan" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+app="$HOME/Applications/NetBird UI.app"
+mkdir -p "$app"
+cat > "$app/Info.plist" <<'PLIST'
+<?xml version="1.0"?>
+<plist version="1.0"><dict>
+    <key>CFBundleIdentifier</key><string>io.netbird.client</string>
+    <key>CFBundleExecutable</key><string>netbird-ui</string>
+</dict></plist>
+PLIST
+printf '#!/bin/sh\n' > "$app/netbird-ui"
+chmod +x "$app/netbird-ui"
+# Limit app enumeration to the fixture even when the host has NetBird installed.
+find() {
+    case "$1" in
+        "$HOME/Applications"|*/LaunchAgents) /usr/bin/find "$@" ;;
+    esac
+}
+expect_scan_failure() {
+    rm -f "$HOME/.cache/mole/installed_apps_cache"
+    if scan_installed_apps "$HOME/$1.txt"; then
+        echo "NOT_FAILED_$1"
+        exit 1
+    fi
+    [[ "$MOLE_APP_SCAN_FAILURE_DETAIL" == "~/Applications/NetBird UI.app" ]] || exit 1
+}
+scan_installed_apps "$HOME/installed.txt"
+grep -Fxq io.netbird.client "$HOME/installed.txt" || exit 1
+
+# The executable has to be a real file next to the plist, not a link into
+# somewhere else, which is how a PlayCover alias is built.
+mv "$app/netbird-ui" "$HOME/netbird-ui"
+ln -s "$HOME/netbird-ui" "$app/netbird-ui"
+expect_scan_failure linked-executable
+rm "$app/netbird-ui"
+expect_scan_failure missing-executable
+# A path in CFBundleExecutable could hide a linked folder from the link check.
+mkdir -p "$HOME/elsewhere"
+cp "$HOME/netbird-ui" "$HOME/elsewhere/netbird-ui"
+ln -s "$HOME/elsewhere" "$app/sub"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable sub/netbird-ui" "$app/Info.plist"
+expect_scan_failure executable-path
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable netbird-ui" "$app/Info.plist"
+rm "$app/sub"
+mv "$HOME/netbird-ui" "$app/netbird-ui"
+
+# A Contents/ directory means a normal bundle whose plist is missing.
+mkdir "$app/Contents"
+expect_scan_failure with-contents
+rmdir "$app/Contents"
+
+# A root plist that does not parse may hide a real id.
+printf 'not a plist' > "$app/Info.plist"
+expect_scan_failure unreadable
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
 @test "installed-app scan skips an iOS app with a dangling WrappedBundle symlink" {

@@ -302,7 +302,7 @@ func (m model) View() string {
 					if entry.IsDir {
 						icon = "📁"
 					}
-					name := truncateMiddle(entry.Name, nameWidth)
+					name := truncateMiddle(m.entryDisplayName(entry), nameWidth)
 					paddedName := padName(name, nameWidth)
 
 					sizeValue := max(entry.Size, 0)
@@ -444,7 +444,7 @@ func (m model) View() string {
 		} else {
 			fmt.Fprintf(&b, "%s移至废纸篓：%s %s，占用 %s  %s回车确认 | ESC 取消%s\n",
 				colorRed, colorReset,
-				m.deleteTarget.Name, measuredSizeLabel(m.deleteTarget.Size, m.deleteTarget.State),
+				m.entryDisplayName(*m.deleteTarget), measuredSizeLabel(m.deleteTarget.Size, m.deleteTarget.State),
 				colorGray, colorReset)
 		}
 		if deleteCount > 1 && hasAppBundle {
